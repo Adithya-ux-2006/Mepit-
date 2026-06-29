@@ -64,7 +64,7 @@ export const projectInputsSchema = z.object({
   cctv_cost: nullableNumber,
   total_mep_cost: nullableNumber,
   operating_hours: nullableNumber,
-});
+}).partial();
 
 export type ProjectInputsInput = z.infer<typeof projectInputsSchema>;
 
@@ -112,7 +112,7 @@ export const roleSchema = z.enum(['contributor', 'admin']);
 
 export const upsertUserSchema = z.object({
   email: z.string().email(),
-  name: z.string().min(1).max(200),
+  name: z.string().min(1).max(200).optional(),
   role: roleSchema.optional().default('contributor'),
 });
 
@@ -124,9 +124,9 @@ export type UpsertUserInput = z.infer<typeof upsertUserSchema>;
 
 export const createAuditLogSchema = z.object({
   entity_type: z.string().min(1).max(50),
-  entity_id: z.string().uuid(),
+  entity_id: z.string().min(1),
   action: z.string().min(1).max(100),
-  performed_by: z.string().uuid(),
+  performed_by: z.string().min(1),
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });
 

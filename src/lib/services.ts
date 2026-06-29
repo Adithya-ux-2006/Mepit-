@@ -874,10 +874,12 @@ export async function getSimilarProjectsAsync(
   phase1Scored.sort((a, b) => b.score - a.score);
   const topCandidates = phase1Scored.slice(0, Math.min(topN * 2, phase1Scored.length));
 
-  // Phase 2: Load inputs for top candidates only and re-score with HVAC matching
+  // Phase 2: Batch-load inputs for top candidates and re-score with HVAC matching
+  const candidateIds = topCandidates.map((s) => s.project.id);
+  const inputsMap = await getProjectInputsBatch(candidateIds);
   const phase2Scored: SimilarProject[] = [];
   for (const s of topCandidates) {
-    const inputs = await getProjectInputs(s.project.id);
+    const inputs = inputsMap.get(s.project.id) ?? null;
     const fullScore = calculateSimilarity(target, s.project, inputs);
     if (fullScore > 0) phase2Scored.push({ project: s.project, score: fullScore });
   }
