@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { createProject, upsertProjectInputs, updateProjectStatus } from '@/lib/services';
+import { createProject, upsertProjectInputs, updateProjectStatus, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, getProjectInputs, validateProjectInputs, type ValidationError } from '@/lib/services';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -202,6 +202,8 @@ export default function CreateProjectPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [costWarning, setCostWarning] = useState('');
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [showValidation, setShowValidation] = useState(false);
 
   const update = useCallback(<K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -221,6 +223,45 @@ export default function CreateProjectPage() {
       setCostWarning('');
     }
   };
+
+  const runValidation = useCallback(async (data: FormState) => {
+    const allData: Record<string, unknown> = {
+      project_name: data.project_name,
+      typology: data.typology,
+      built_up_area: data.built_up_area,
+      carpet_area: data.carpet_area,
+      saleable_area: data.saleable_area,
+      leasable_area: data.leasable_area,
+      plant_room_area: data.plant_room_area,
+      leasable_plant_room_area: data.leasable_plant_room_area,
+      shaft_area: data.shaft_area,
+      occupancy_density_office: data.occupancy_density_office,
+      occupancy_density_fb: data.occupancy_density_fb,
+      total_tr: data.total_tr,
+      total_airflow_cfm: data.total_airflow_cfm,
+      operating_hours: data.operating_hours,
+      tenant_power_kva: data.tenant_power_kva,
+      common_area_power_kva: data.common_area_power_kva,
+      transformer_capacity_kva: data.transformer_capacity_kva,
+      dg_capacity_kva: data.dg_capacity_kva,
+      dg_loading_factor: data.dg_loading_factor,
+      annual_energy_kwh: data.annual_energy_kwh,
+      hvac_cost: data.hvac_cost,
+      electrical_cost: data.electrical_cost,
+      dg_cost: data.dg_cost,
+      fire_fighting_cost: data.fire_fighting_cost,
+      stp_cost: data.stp_cost,
+      phe_cost: data.phe_cost,
+      bms_cost: data.bms_cost,
+      fapa_cost: data.fapa_cost,
+      cctv_cost: data.cctv_cost,
+      total_mep_cost: data.total_mep_cost,
+    };
+    const errors = await validateProjectInputs(allData);
+    setValidationErrors(errors);
+    setShowValidation(true);
+    return errors;
+  }, []);
 
   const persist = async (status: 'draft' | 'submitted') => {
     if (!user) return;
@@ -275,7 +316,28 @@ export default function CreateProjectPage() {
       });
 
       if (status === 'submitted') {
-        await updateProjectStatus(project.id, 'submitted');
+        // Run Grüne Basis validation before submission
+        const validationErrs = await runValidation(form);
+        if (validationErrs.length > 0) {
+          setSubmitting(false);
+          return;
+        }
+
+        // Auto-approve: run formula engine and log audit
+        await updateProjectStatus(project.id, 'approved', user.id);
+        const [formulas, inputs] = await Promise.all([
+          getKpiFormulas(),
+          getProjectInputs(project.id),
+        ]);
+        if (inputs) {
+          await calculateAndStoreKpiOutputs(project.id, inputs, formulas, project);
+        }
+        await createAuditLog({
+          entity_type: 'project',
+          entity_id: project.id,
+          action: 'submitted',
+          performed_by: user.id,
+        });
       }
 
       router.push('/board2/repository');
@@ -424,6 +486,38 @@ export default function CreateProjectPage() {
           <p className="text-sm text-destructive">{error}</p>
         )}
 
+        {showValidation && validationErrors.length > 0 && (
+          <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-destructive">
+                {validationErrors.length} Grüne Basis validation {validationErrors.length === 1 ? 'issue' : 'issues'} found
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowValidation(false)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Dismiss
+              </button>
+            </div>
+            <ul className="list-disc list-inside space-y-1">
+              {validationErrors.map((err, i) => (
+                <li key={i} className="text-xs text-destructive">
+                  <span className="font-mono font-medium">{err.field}</span>: {err.error_message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {showValidation && validationErrors.length === 0 && (
+          <div className="border border-green-200 bg-green-50 rounded-lg p-3">
+            <p className="text-sm text-green-700 font-medium">
+              All Grüne Basis validation checks passed.
+            </p>
+          </div>
+        )}
+
         <div className="flex gap-3 pt-2">
           <Button type="submit" variant="outline" disabled={submitting}>
             {submitting ? 'Saving...' : 'Save Draft'}
@@ -431,9 +525,17 @@ export default function CreateProjectPage() {
           <Button
             type="button"
             disabled={submitting || !form.project_name || !form.typology}
-            onClick={() => persist('submitted')}
+            onClick={async () => {
+              setSubmitting(true);
+              const errs = await runValidation(form);
+              if (errs.length === 0) {
+                persist('submitted');
+              } else {
+                setSubmitting(false);
+              }
+            }}
           >
-            {submitting ? 'Submitting...' : 'Submit for Review'}
+            {submitting ? 'Submitting...' : 'Validate & Submit'}
           </Button>
         </div>
       </form>

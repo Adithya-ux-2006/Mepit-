@@ -32,14 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const syncUser = async (email: string, name: string) => {
     if (!supabase || !isSupabaseConfigured) return null;
-    const existing = await getUserByEmail(email);
-    if (existing) {
-      setUser(existing);
-      return existing;
+    try {
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        setUser(existing);
+        return existing;
+      }
+      const newUser = await upsertUser({ email, name, role: 'contributor' });
+      setUser(newUser);
+      return newUser;
+    } catch (err) {
+      console.error('Failed to sync user with Supabase:', err);
+      return null;
     }
-    const newUser = await upsertUser({ email, name, role: 'contributor' });
-    setUser(newUser);
-    return newUser;
   };
 
   useEffect(() => {
@@ -50,12 +55,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
-      if (fbUser?.email && supabase && isSupabaseConfigured) {
-        await syncUser(fbUser.email, fbUser.displayName ?? '');
-      } else {
+      try {
+        if (fbUser?.email && supabase && isSupabaseConfigured) {
+          await syncUser(fbUser.email, fbUser.displayName ?? '');
+        } else {
+          setUser(null);
+        }
+      } catch (err) {
+        console.error('Auth state change error:', err);
         setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsubscribe;
   }, []);

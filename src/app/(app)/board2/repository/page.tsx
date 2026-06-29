@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { getProjects } from '@/lib/services';
+import { getProjects, getProjectKpiOutputs } from '@/lib/services';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -13,7 +14,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { Project } from '@/types';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Download, GitCompareArrows, Eye } from 'lucide-react';
+import type { Project, ProjectKpiOutput, KpiFormula } from '@/types';
+
+interface OutputWithKpi extends ProjectKpiOutput {
+  kpi_formula?: KpiFormula;
+}
 
 export default function RepositoryPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -23,6 +35,12 @@ export default function RepositoryPage() {
   const [filterLocation, setFilterLocation] = useState('');
   const [filterYear, setFilterYear] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareData, setCompareData] = useState<
+    { project: Project; outputs: OutputWithKpi[] }[]
+  >([]);
+  const [compareLoading, setCompareLoading] = useState(false);
 
   useEffect(() => {
     getProjects()
@@ -59,6 +77,104 @@ export default function RepositoryPage() {
     });
   }, [projects, search, filterTypology, filterLocation, filterYear, filterStatus]);
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleCompare = async () => {
+    if (selectedIds.length < 2) return;
+    setCompareLoading(true);
+    try {
+      const selected = projects.filter((p) => selectedIds.includes(p.id));
+      const data = await Promise.all(
+        selected.map(async (project) => {
+          const outputs = await getProjectKpiOutputs(project.id);
+          return { project, outputs };
+        })
+      );
+      setCompareData(data);
+      setCompareMode(true);
+    } catch {
+      // ignore
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  // Collect all unique KPI codes across compared projects for the comparison table
+  const allKpiCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const d of compareData) {
+      for (const o of d.outputs) {
+        if (o.kpi_formula?.kpi_code) codes.add(o.kpi_formula.kpi_code);
+      }
+    }
+    return [...codes];
+  }, [compareData]);
+
+  const getKpiValue = (
+    outputs: OutputWithKpi[],
+    kpiCode: string
+  ): { value: number | null; unit: string } => {
+    const match = outputs.find((o) => o.kpi_formula?.kpi_code === kpiCode);
+    return { value: match?.calculated_value ?? null, unit: match?.kpi_formula?.unit ?? '' };
+  };
+
+  const handleExport = () => {
+    const rows: string[][] = [
+      ['Project Name', 'Typology', 'City', 'State', 'Year', 'BUA', 'Carpet Area', 'Status'],
+    ];
+    for (const p of filtered) {
+      rows.push([
+        p.project_name,
+        p.typology,
+        p.location_city,
+        p.location_state,
+        String(p.project_year),
+        String(p.built_up_area),
+        String(p.carpet_area),
+        p.status,
+      ]);
+    }
+    const csv = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `repository-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCompareExport = () => {
+    if (compareData.length === 0) return;
+    const header = ['KPI Code', 'KPI Name', 'Unit', ...compareData.map((d) => d.project.project_name)];
+    const rows: string[][] = [header];
+    for (const kpiCode of allKpiCodes) {
+      const first = compareData[0].outputs.find((o) => o.kpi_formula?.kpi_code === kpiCode);
+      const row: string[] = [
+        kpiCode,
+        first?.kpi_formula?.kpi_name ?? '',
+        first?.kpi_formula?.unit ?? '',
+      ];
+      for (const d of compareData) {
+        const { value } = getKpiValue(d.outputs, kpiCode);
+        row.push(value != null ? String(Math.round(value * 100) / 100) : '—');
+      }
+      rows.push(row);
+    }
+    const csv = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kpi-comparison-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -69,11 +185,30 @@ export default function RepositoryPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Project Repository</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Browse and search submitted projects.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Project Repository</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Browse, compare, and export submitted projects.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {selectedIds.length >= 2 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCompare}
+              disabled={compareLoading}
+            >
+              <GitCompareArrows className="h-4 w-4 mr-1.5" />
+              {compareLoading ? 'Loading...' : `Compare (${selectedIds.length})`}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-1.5" />
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -146,9 +281,14 @@ export default function RepositoryPage() {
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        {filtered.length} projects shown &middot; Select {compareMode ? 'projects to compare' : '2+ approved projects to compare'}
+      </p>
+
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-8" />
             <TableHead>Project Name</TableHead>
             <TableHead>Typology</TableHead>
             <TableHead>Location</TableHead>
@@ -160,7 +300,7 @@ export default function RepositoryPage() {
         <TableBody>
           {filtered.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                 No projects found.
               </TableCell>
             </TableRow>
@@ -168,16 +308,25 @@ export default function RepositoryPage() {
           {filtered.map((project) => (
             <TableRow key={project.id}>
               <TableCell>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(project.id)}
+                  onChange={() => toggleSelect(project.id)}
+                  className="h-4 w-4 rounded border-input"
+                />
+              </TableCell>
+              <TableCell>
                 <Link
                   href={`/board2/repository/${project.id}`}
-                  className="font-medium text-foreground hover:underline"
+                  className="font-medium text-foreground hover:underline inline-flex items-center gap-1"
                 >
                   {project.project_name}
+                  <Eye className="h-3 w-3 text-muted-foreground" />
                 </Link>
               </TableCell>
               <TableCell>{project.typology}</TableCell>
               <TableCell>{project.location_city}{project.location_state ? `, ${project.location_state}` : ''}</TableCell>
-              <TableCell>{project.built_up_area}</TableCell>
+              <TableCell>{project.built_up_area.toLocaleString()}</TableCell>
               <TableCell>{project.project_year}</TableCell>
               <TableCell>
                 <span
@@ -196,6 +345,74 @@ export default function RepositoryPage() {
           ))}
         </TableBody>
       </Table>
+
+      {/* Comparison View */}
+      {compareMode && compareData.length >= 2 && (
+        <Card className="border-primary/30">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">
+                KPI Comparison ({compareData.length} projects)
+              </CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleCompareExport}>
+                  <Download className="h-4 w-4 mr-1.5" />
+                  Export Comparison
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => { setCompareMode(false); setCompareData([]); setSelectedIds([]); }}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[120px]">KPI Code</TableHead>
+                    <TableHead className="min-w-[80px]">Unit</TableHead>
+                    {compareData.map((d) => (
+                      <TableHead key={d.project.id} className="min-w-[140px] text-right">
+                        {d.project.project_name}
+                        <span className="block text-[10px] font-normal text-muted-foreground">
+                          {d.project.typology} · {d.project.built_up_area.toLocaleString()} sqft
+                        </span>
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allKpiCodes.map((kpiCode) => {
+                    const first = compareData[0].outputs.find((o) => o.kpi_formula?.kpi_code === kpiCode);
+                    return (
+                      <TableRow key={kpiCode}>
+                        <TableCell className="font-mono text-xs">{kpiCode}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{first?.kpi_formula?.unit ?? ''}</TableCell>
+                        {compareData.map((d) => {
+                          const { value } = getKpiValue(d.outputs, kpiCode);
+                          return (
+                            <TableCell key={d.project.id} className="text-right font-medium text-sm">
+                              {value != null ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    );
+                  })}
+                  {allKpiCodes.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={2 + compareData.length} className="text-center text-muted-foreground py-8">
+                        No KPI outputs available for the selected projects.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

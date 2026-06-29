@@ -9,6 +9,7 @@ import type {
   AuditLog,
   User,
 } from '@/types';
+import { validateInput, createProjectSchema, projectInputsSchema, upsertUserSchema, createAuditLogSchema } from '@/lib/validations';
 
 function getDb() {
   if (!supabase || !isConfigured) throw new Error('Supabase is not configured');
@@ -33,6 +34,8 @@ export async function createProject(
   },
   userId: string
 ): Promise<Project> {
+  const validation = validateInput(createProjectSchema, data);
+  if (!validation.success) throw new Error(`Validation failed: ${validation.errors.join('; ')}`);
   const db = getDb();
   const { data: project, error } = await db
     .from('projects')
@@ -132,6 +135,8 @@ export async function upsertProjectInputs(
   projectId: string,
   data: Partial<ProjectInputs>
 ): Promise<ProjectInputs> {
+  const validation = validateInput(projectInputsSchema, data);
+  if (!validation.success) throw new Error(`Validation failed: ${validation.errors.join('; ')}`);
   const db = getDb();
   const { data: existing } = await db
     .from('project_inputs')
@@ -174,6 +179,28 @@ export async function getProjectInputs(
   if (error && error.code === 'PGRST116') return null;
   if (error) throw error;
   return data;
+}
+
+/**
+ * Batch-load project inputs for multiple projects in a single query.
+ * Replaces N+1 individual getProjectInputs calls.
+ */
+export async function getProjectInputsBatch(
+  projectIds: string[]
+): Promise<Map<string, ProjectInputs>> {
+  if (projectIds.length === 0) return new Map();
+  const db = getDb();
+  const { data, error } = await db
+    .from('project_inputs')
+    .select('*')
+    .in('project_id', projectIds);
+
+  if (error) throw error;
+  const map = new Map<string, ProjectInputs>();
+  for (const row of data ?? []) {
+    map.set(row.project_id, row);
+  }
+  return map;
 }
 
 // ============================================================================
@@ -257,6 +284,15 @@ export async function getProjectKpiOutputs(
 
   if (error) throw error;
   return data ?? [];
+}
+
+export async function deleteProjectKpiOutputs(projectId: string): Promise<void> {
+  const db = getDb();
+  const { error } = await db
+    .from('project_kpi_outputs')
+    .delete()
+    .eq('project_id', projectId);
+  if (error) throw error;
 }
 
 export async function calculateAndStoreKpiOutputs(
@@ -469,6 +505,152 @@ export function runFormulaEngine(
 // VALIDATION ENGINE
 // ============================================================================
 
+export interface ValidationError {
+  field: string;
+  rule_type: string;
+  error_message: string;
+}
+
+export async function validateProjectInputs(
+  formData: Record<string, unknown>
+): Promise<ValidationError[]> {
+  const rules = await getValidationRules();
+  const errors: ValidationError[] = [];
+
+  for (const rule of rules) {
+    const fieldValue = formData[rule.field_name];
+    const expr = rule.rule_expression;
+
+    switch (rule.rule_type) {
+      case 'required': {
+        const min = typeof expr.min === 'number' ? expr.min : undefined;
+        if (
+          fieldValue == null ||
+          (typeof fieldValue === 'string' && fieldValue.trim() === '') ||
+          (typeof fieldValue === 'number' && min !== undefined && fieldValue < min)
+        ) {
+          errors.push({
+            field: rule.field_name,
+            rule_type: rule.rule_type,
+            error_message: rule.error_message,
+          });
+        }
+        break;
+      }
+
+      case 'min_value': {
+        const min = typeof expr.min === 'number' ? expr.min : 0;
+        if (
+          typeof fieldValue === 'number' &&
+          fieldValue !== null &&
+          fieldValue < min
+        ) {
+          errors.push({
+            field: rule.field_name,
+            rule_type: rule.rule_type,
+            error_message: rule.error_message,
+          });
+        }
+        break;
+      }
+
+      case 'max_value': {
+        const max = typeof expr.max === 'number' ? expr.max : Infinity;
+        if (
+          typeof fieldValue === 'number' &&
+          fieldValue !== null &&
+          fieldValue > max
+        ) {
+          errors.push({
+            field: rule.field_name,
+            rule_type: rule.rule_type,
+            error_message: rule.error_message,
+          });
+        }
+        break;
+      }
+
+      case 'cross_field': {
+        // Check max_field constraint
+        if (typeof expr.max_field === 'string') {
+          const maxFieldVal = formData[expr.max_field];
+          if (
+            typeof fieldValue === 'number' &&
+            typeof maxFieldVal === 'number' &&
+            fieldValue > maxFieldVal
+          ) {
+            errors.push({
+              field: rule.field_name,
+              rule_type: rule.rule_type,
+              error_message: rule.error_message,
+            });
+          }
+        }
+
+        // Check min_sum_of constraint
+        if (Array.isArray(expr.min_sum_of)) {
+          const sum = expr.min_sum_of.reduce(
+            (acc: number, f: string) => acc + ((formData[f] as number) ?? 0),
+            0
+          );
+          if (
+            typeof fieldValue === 'number' &&
+            fieldValue > 0 &&
+            sum > 0 &&
+            Math.abs(fieldValue - sum) > Math.max(fieldValue * 0.01, 1)
+          ) {
+            errors.push({
+              field: rule.field_name,
+              rule_type: rule.rule_type,
+              error_message: rule.error_message,
+            });
+          }
+        }
+
+        // Check ratio constraints (min_ratio / max_ratio of a reference field)
+        if (typeof expr.min_ratio === 'number' && typeof expr.ratio_field === 'string') {
+          const refVal = formData[expr.ratio_field];
+          if (
+            typeof fieldValue === 'number' &&
+            typeof refVal === 'number' &&
+            refVal > 0
+          ) {
+            const ratio = fieldValue / refVal;
+            if (ratio < expr.min_ratio) {
+              errors.push({
+                field: rule.field_name,
+                rule_type: rule.rule_type,
+                error_message: rule.error_message,
+              });
+            }
+          }
+        }
+
+        if (typeof expr.max_ratio === 'number' && typeof expr.ratio_field === 'string') {
+          const refVal = formData[expr.ratio_field];
+          if (
+            typeof fieldValue === 'number' &&
+            typeof refVal === 'number' &&
+            refVal > 0
+          ) {
+            const ratio = fieldValue / refVal;
+            if (ratio > expr.max_ratio) {
+              errors.push({
+                field: rule.field_name,
+                rule_type: rule.rule_type,
+                error_message: rule.error_message,
+              });
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return errors;
+}
+
 export async function getValidationRules(): Promise<ValidationRule[]> {
   const db = getDb();
   const { data, error } = await db
@@ -526,6 +708,8 @@ export async function deleteValidationRule(id: string): Promise<void> {
 export async function createAuditLog(
   entry: Partial<AuditLog>
 ): Promise<AuditLog> {
+  const validation = validateInput(createAuditLogSchema, entry);
+  if (!validation.success) throw new Error(`Validation failed: ${validation.errors.join('; ')}`);
   const db = getDb();
   const { data, error } = await db
     .from('audit_log')
@@ -583,6 +767,8 @@ export async function getUserByEmail(email: string): Promise<User | null> {
 export async function upsertUser(
   input: Partial<User>
 ): Promise<User> {
+  const validation = validateInput(upsertUserSchema, input);
+  if (!validation.success) throw new Error(`Validation failed: ${validation.errors.join('; ')}`);
   const db = getDb();
   const existing = await getUserByEmail(input.email ?? '');
   if (existing) return existing;
@@ -613,73 +799,94 @@ export function calculateSimilarity(
     location_city: string;
     location_state: string;
     project_year: number;
+    hvac_strategy?: string;
   },
-  candidate: Project
+  candidate: Project,
+  candidateInputs?: ProjectInputs | null
 ): number {
   let score = 0;
 
-  // Typology match (40 points)
+  // Typology match (35 points)
   if (candidate.typology === target.typology) {
-    score += 40;
+    score += 35;
   }
 
-  // BUA proximity (25 points)
+  // BUA proximity (20 points)
   if (candidate.built_up_area > 0 && target.built_up_area > 0) {
     const ratio =
       Math.abs(candidate.built_up_area - target.built_up_area) /
       target.built_up_area;
-    if (ratio <= 0.1) score += 25;
-    else if (ratio <= 0.25) score += 15;
-    else if (ratio <= 0.5) score += 8;
+    if (ratio <= 0.1) score += 20;
+    else if (ratio <= 0.25) score += 12;
+    else if (ratio <= 0.5) score += 6;
   }
 
-  // Location match (20 points)
+  // Location match (15 points)
   if (
     candidate.location_city?.toLowerCase() ===
     target.location_city?.toLowerCase()
   ) {
-    score += 20;
+    score += 15;
   } else if (
     candidate.location_state?.toLowerCase() ===
     target.location_state?.toLowerCase()
   ) {
-    score += 10;
+    score += 8;
   }
 
-  // Project year proximity (15 points)
+  // Year weighting (15 points) — exponential decay favors recent projects
   const yearDiff = Math.abs(
     (candidate.project_year ?? 0) - target.project_year
   );
-  if (yearDiff <= 2) score += 15;
-  else if (yearDiff <= 5) score += 10;
-  else if (yearDiff <= 10) score += 5;
-  else score += 2;
+  const yearScore = Math.round(15 * Math.exp(-0.15 * yearDiff));
+  score += yearScore;
+
+  // HVAC strategy match (15 points)
+  if (
+    target.hvac_strategy &&
+    candidateInputs?.hvac_strategy &&
+    candidateInputs.hvac_strategy === target.hvac_strategy
+  ) {
+    score += 15;
+  }
 
   return score;
 }
 
-export function getSimilarProjects(
+export async function getSimilarProjectsAsync(
   target: {
     typology: string;
     built_up_area: number;
     location_city: string;
     location_state: string;
     project_year: number;
+    hvac_strategy?: string;
   },
   candidates: Project[],
   topN = 10
-): SimilarProject[] {
-  const scored: SimilarProject[] = candidates
-    .filter((p) => p.status === 'approved')
-    .map((p) => ({
-      project: p,
-      score: calculateSimilarity(target, p),
-    }))
-    .filter((s) => s.score > 0);
+): Promise<SimilarProject[]> {
+  // Phase 1: Score without inputs (fast, no DB queries)
+  const approved = candidates.filter((p) => p.status === 'approved');
+  const phase1Scored: SimilarProject[] = approved.map((p) => ({
+    project: p,
+    score: calculateSimilarity(target, p),
+  })).filter((s) => s.score > 0);
+  phase1Scored.sort((a, b) => b.score - a.score);
+  const topCandidates = phase1Scored.slice(0, Math.min(topN * 2, phase1Scored.length));
 
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topN);
+  // Phase 2: Load inputs for top candidates only and re-score with HVAC matching
+  const phase2Scored: SimilarProject[] = [];
+  for (const s of topCandidates) {
+    const inputs = await getProjectInputs(s.project.id);
+    const fullScore = calculateSimilarity(target, s.project, inputs);
+    if (fullScore > 0) phase2Scored.push({ project: s.project, score: fullScore });
+  }
+
+  phase2Scored.sort((a, b) => b.score - a.score);
+  return phase2Scored.slice(0, topN);
 }
+
+
 
 export function calculateConfidence(
   similarProjects: SimilarProject[],

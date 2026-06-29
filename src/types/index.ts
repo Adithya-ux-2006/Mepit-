@@ -180,9 +180,17 @@ export interface RecommendationCard {
   kpi_name: string;
   category: KpiCategory;
   recommended_value: number;
+  weighted_mean: number;
   typical_range_min: number;
   typical_range_max: number;
+  best_case: number;
+  upper_range: number;
   confidence: 'Low' | 'Medium' | 'High' | 'Very High';
+  confidence_factors: string[];
   similar_projects_count: number;
+  outliers_removed: number;
+  std_dev: number;
+  cv: number;
   unit: string;
+  formula_description: string;
 }

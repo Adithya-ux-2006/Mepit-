@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { getProjects, getProjectInputs, getKpiFormulas, getSimilarProjects, calculateConfidence, runFormulaEngine } from '@/lib/services';
+import { getProjects, getKpiFormulas } from '@/lib/services';
+import { runLearningEngine } from '@/lib/learning-engine';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Download } from 'lucide-react';
-import type { Project, ProjectInputs, KpiFormula, RecommendationCard } from '@/types';
+import type { Project, KpiCategory, KpiFormula, RecommendationCard } from '@/types';
 
 const typologies = [
   'Office', 'Retail', 'Hospitality', 'Mixed Use',
@@ -80,62 +81,44 @@ export default function KpiEnginePage() {
     setResults(null);
 
     try {
-      const similar = getSimilarProjects(
+      const result = await runLearningEngine(
         {
           typology: form.typology,
           built_up_area: form.built_up_area,
           location_city: form.location_city,
           location_state: form.location_state,
           project_year: form.project_year,
+          hvac_strategy: form.hvac_strategy || undefined,
         },
         allProjects,
+        formulas,
         15
       );
 
-      const similarProjects = similar.map((s) => s.project);
-      const similarInputs: ProjectInputs[] = [];
-      for (const p of similarProjects) {
-        const inp = await getProjectInputs(p.id);
-        if (inp) similarInputs.push(inp);
-      }
+      const formulaMap = new Map(formulas.map((f) => [f.kpi_code, f]));
 
-      const cards: RecommendationCard[] = [];
-
-      for (const formula of formulas) {
-        const values: number[] = [];
-
-        for (let i = 0; i < similarProjects.length; i++) {
-          if (!similarInputs[i]) continue;
-          const result = runFormulaEngine(formula.kpi_code, {
-            ...similarInputs[i],
-            built_up_area: similarProjects[i].built_up_area,
-            carpet_area: similarProjects[i].carpet_area,
-            saleable_area: similarProjects[i].saleable_area,
-          });
-          if (result.value != null) values.push(result.value);
-        }
-
-        if (values.length === 0) continue;
-
-        const mean = values.reduce((a, b) => a + b, 0) / values.length;
-        const sorted = [...values].sort((a, b) => a - b);
-        const rangeMin = sorted[Math.floor(sorted.length * 0.15)];
-        const rangeMax = sorted[Math.floor(sorted.length * 0.85)];
-
-        const { level: confidence, sampleSize } = calculateConfidence(similar, values);
-
-        cards.push({
-          kpi_code: formula.kpi_code,
-          kpi_name: formula.kpi_name,
-          category: formula.category,
-          recommended_value: Math.round(mean * 100) / 100,
-          typical_range_min: Math.round(rangeMin * 100) / 100,
-          typical_range_max: Math.round(rangeMax * 100) / 100,
-          confidence,
-          similar_projects_count: sampleSize,
-          unit: formula.unit,
-        });
-      }
+      const cards: RecommendationCard[] = result.statistics.map((stat) => {
+        const formula = formulaMap.get(stat.kpi_code);
+        return {
+          kpi_code: stat.kpi_code,
+          kpi_name: stat.kpi_name,
+          category: stat.category as KpiCategory,
+          recommended_value: stat.weighted_mean,
+          weighted_mean: stat.weighted_mean,
+          typical_range_min: stat.range_p15,
+          typical_range_max: stat.range_p85,
+          best_case: stat.best_case,
+          upper_range: stat.upper_range,
+          confidence: stat.confidence,
+          confidence_factors: stat.confidence_factors,
+          similar_projects_count: stat.sample_size,
+          outliers_removed: stat.outliers_removed,
+          std_dev: stat.std_dev,
+          cv: stat.cv,
+          unit: stat.unit,
+          formula_description: formula?.description ?? '',
+        };
+      });
 
       setResults(cards);
     } catch (err) {
@@ -394,12 +377,44 @@ export default function KpiEnginePage() {
                             {card.unit}
                           </span>
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Range: {card.typical_range_min.toLocaleString()} &ndash; {card.typical_range_max.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Based on {card.similar_projects_count} similar projects
-                        </p>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Range (15–85th)</span>
+                            <p className="font-medium">{card.typical_range_min.toLocaleString()} &ndash; {card.typical_range_max.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Best Case</span>
+                            <p className="font-medium text-green-600">{card.best_case.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Upper Range (75th)</span>
+                            <p className="font-medium">{card.upper_range.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Projects</span>
+                            <p className="font-medium">{card.similar_projects_count}{card.outliers_removed > 0 ? ` (${card.outliers_removed} outliers)` : ''}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Std Dev</span>
+                            <p className="font-medium">{card.std_dev.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">CV</span>
+                            <p className="font-medium">{(card.cv * 100).toFixed(1)}%</p>
+                          </div>
+                        </div>
+                        {card.confidence_factors.length > 0 && (
+                          <div className="mt-2 text-[10px] text-muted-foreground space-y-0.5">
+                            {card.confidence_factors.map((f, i) => (
+                              <p key={i}>&bull; {f}</p>
+                            ))}
+                          </div>
+                        )}
+                        {card.formula_description && (
+                          <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                            {card.formula_description}
+                          </p>
+                        )}
                       </CardContent>
                     </Card>
                   ))}

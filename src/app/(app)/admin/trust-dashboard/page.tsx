@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { BarChart3, Database, Activity, Clock } from 'lucide-react';
+import { BarChart3, Database, Activity, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
 import type { Project, KpiFormula } from '@/types';
 
 function TrustDashboardContent() {
@@ -62,6 +62,29 @@ function TrustDashboardContent() {
       return sum + diff / (1000 * 60 * 60 * 24);
     }, 0);
   const avgCycleDays = approved.length ? (avgCycleTime / approved.length).toFixed(1) : '—';
+
+  // Typology gap analysis
+  const allTypologies = ['Office', 'Retail', 'Hospitality', 'Mixed Use', 'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional'];
+  const missingTypologies = allTypologies.filter((t) => !typologyBreakdown[t]);
+  const thinTypologies = Object.entries(typologyBreakdown).filter(([, c]) => c < 3).map(([t]) => t);
+
+  // Location coverage
+  const locationBreakdown: Record<string, number> = {};
+  for (const p of approved) {
+    locationBreakdown[p.location_city] = (locationBreakdown[p.location_city] ?? 0) + 1;
+  }
+
+  // BUA distribution
+  const buaValues = approved.map((p) => p.built_up_area).filter((v) => v > 0).sort((a, b) => a - b);
+  const avgBua = buaValues.length ? Math.round(buaValues.reduce((a, b) => a + b, 0) / buaValues.length) : 0;
+  const minBua = buaValues[0] ?? 0;
+  const maxBua = buaValues[buaValues.length - 1] ?? 0;
+
+  // Data completeness score
+  const completeProjects = approved.filter((p) =>
+    p.built_up_area > 0 && p.carpet_area > 0 && p.saleable_area > 0 && p.project_year > 0
+  ).length;
+  const completenessScore = approved.length ? Math.round((completeProjects / approved.length) * 100) : 0;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -232,7 +255,102 @@ function TrustDashboardContent() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Data Quality */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <TrendingUp className="h-4 w-4" />
+              Data Quality Metrics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span>Completeness Score</span>
+                <span className="font-semibold">
+                  <span className={completenessScore >= 80 ? 'text-green-600' : completenessScore >= 50 ? 'text-amber-600' : 'text-red-600'}>
+                    {completenessScore}%
+                  </span>
+                </span>
+              </div>
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${completenessScore >= 80 ? 'bg-green-500' : completenessScore >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                  style={{ width: `${completenessScore}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Projects with BUA, carpet area, saleable area, and year all populated.</p>
+
+              <div className="flex justify-between text-sm">
+                <span>BUA Range</span>
+                <span className="font-semibold">{minBua.toLocaleString()} – {maxBua.toLocaleString()} sqft</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Average BUA</span>
+                <span className="font-semibold">{avgBua.toLocaleString()} sqft</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Gap Analysis */}
+      {(missingTypologies.length > 0 || thinTypologies.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Repository Gap Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {missingTypologies.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-foreground mb-1">Missing Typologies ({missingTypologies.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {missingTypologies.map((t) => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">{t}</span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Board 3 cannot generate recommendations for these typologies.</p>
+                </div>
+              )}
+              {thinTypologies.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-foreground mb-1">Thin Typologies ({thinTypologies.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {thinTypologies.map((t) => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{t} ({typologyBreakdown[t]})</span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Recommendations will have Low/Medium confidence for these typologies.</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Location Coverage */}
+      {Object.keys(locationBreakdown).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Location Coverage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {Object.entries(locationBreakdown).sort((a, b) => b[1] - a[1]).map(([city, count]) => (
+                <div key={city} className="flex justify-between text-xs">
+                  <span>{city}</span>
+                  <span className="text-muted-foreground">{count}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
