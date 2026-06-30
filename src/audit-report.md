@@ -122,17 +122,28 @@
 
 ---
 
+## Zod Validation Schemas ✅ (Commit 1f588bb)
+- `src/lib/validations.ts` — Schemas for createProject, projectInputs, kpiFormula, validationRule, upsertUser, createAuditLog, similarityTarget
+- Validation applied to: createProject, upsertProjectInputs, createAuditLog, upsertUser
+- projectInputsSchema uses `.partial()` for partial update flexibility
+
+## N+1 Query Optimization ✅ (Commit a1197ef)
+- `getProjectInputsBatch()` in services.ts — single-query batch loading via `.in()` clause
+- Learning Engine uses batch loading instead of per-project queries
+- `getSimilarProjectsAsync` Phase 2 uses batch loading
+- Reduced from N individual queries to 1 batch query per similarity computation
+
+---
+
 ## Remaining Issues (Future Phases)
 
 | Priority | Issue | Effort |
 |----------|-------|--------|
-| MEDIUM | Add Zod validation schemas for service function inputs | 2-3 hrs |
-| MEDIUM | Trust Dashboard — anomaly detection, gap analysis | 1-2 hrs |
 | LOW | Rate limiting on session API | 30 min |
-| LOW | Board 3 — batch input loading to reduce N+1 queries | 1 hr |
+| LOW | Remove dead `similarityTargetSchema` or wire into engine | 5 min |
 
 ---
 
 ## Conclusion
 
-All 10 phases completed. Build passes clean. Security hardening, validation engine, learning engine integration, input editing, and activity feed all implemented and verified.
+All 10 phases completed. Zod validation and N+1 optimization added. Build passes clean. 2 commits: `1f588bb` and `a1197ef`. Security hardening, validation engine, learning engine integration, input editing, and activity feed all implemented and verified.
