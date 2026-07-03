@@ -37,12 +37,20 @@ export default function LoginPage() {
       }
 
       const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        throw new Error('Failed to obtain authentication token. Please try again.');
+      }
 
-      await fetch('/api/auth/session', {
+      const sessionRes = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken }),
       });
+
+      if (!sessionRes.ok) {
+        const body = await sessionRes.json().catch(() => ({ error: 'Session creation failed' }));
+        throw new Error(body.error || `Server rejected login (HTTP ${sessionRes.status}). Check that the server environment is configured correctly.`);
+      }
 
       router.push('/dashboard');
     } catch (err: unknown) {
