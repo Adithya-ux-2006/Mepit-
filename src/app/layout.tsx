@@ -14,8 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Grüne Project Intelligence Platform",
-  description: "Internal MEP consultancy platform",
+  title: "Grüne Designs Platform",
+  description: "Future Proof Buildings — MEP consultancy intelligence platform",
+  icons: {
+    icon: "/logo-mark.svg",
+  },
 };
 
 export default function RootLayout({

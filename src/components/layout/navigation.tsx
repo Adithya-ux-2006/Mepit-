@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
@@ -35,15 +36,25 @@ export function Navigation() {
   const { role, signOut } = useAuth();
 
   return (
-    <aside className="w-60 border-r border-border bg-white flex flex-col shrink-0">
-      <div className="px-5 py-4 border-b border-border">
-        <Link href="/dashboard" className="text-base font-semibold text-foreground tracking-tight">
-          Grüne Platform
+    <aside className="w-60 border-r border-sidebar-border bg-sidebar flex flex-col shrink-0">
+      <div className="px-5 py-4 border-b border-sidebar-border">
+        <Link href="/dashboard" className="flex items-center gap-2.5">
+          <Image
+            src="/logo-mark.svg"
+            alt="Grüne Designs"
+            width={32}
+            height={32}
+            className="rounded-lg"
+            priority
+          />
+          <span className="text-sm font-bold text-sidebar-foreground tracking-tight">
+            Grüne
+          </span>
         </Link>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        <p className="text-xs font-medium text-muted-foreground px-2 pb-1 uppercase tracking-wider">
+        <p className="text-xs font-medium text-sidebar-accent-foreground/60 px-2 pb-1 uppercase tracking-wider">
           Main
         </p>
         {navItems.map((item) => {
@@ -55,8 +66,8 @@ export function Navigation() {
               href={item.href}
               className={`flex items-center gap-2.5 px-2 py-1.5 text-sm rounded-md transition-colors ${
                 isActive
-                  ? 'bg-secondary text-secondary-foreground font-medium'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                  : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -68,7 +79,7 @@ export function Navigation() {
         {role === 'admin' && (
           <>
             <div className="pt-4">
-              <p className="text-xs font-medium text-muted-foreground px-2 pb-1 uppercase tracking-wider">
+              <p className="text-xs font-medium text-sidebar-accent-foreground/60 px-2 pb-1 uppercase tracking-wider">
                 Admin
               </p>
             </div>
@@ -81,8 +92,8 @@ export function Navigation() {
                   href={item.href}
                   className={`flex items-center gap-2.5 px-2 py-1.5 text-sm rounded-md transition-colors ${
                     isActive
-                      ? 'bg-secondary text-secondary-foreground font-medium'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                      : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
                   }`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -94,12 +105,12 @@ export function Navigation() {
         )}
       </nav>
 
-      <div className="px-3 py-3 border-t border-border">
+      <div className="px-3 py-3 border-t border-sidebar-border">
         <Button
           variant="ghost"
           size="sm"
           onClick={signOut}
-          className="w-full justify-start text-muted-foreground hover:text-foreground"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
         >
           <LogOut className="h-4 w-4 mr-2" />
           Sign Out

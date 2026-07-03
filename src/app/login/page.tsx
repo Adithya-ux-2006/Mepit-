@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -57,6 +58,14 @@ export default function LoginPage() {
     <div className="flex flex-1 items-center justify-center min-h-screen bg-background">
       <div className="w-full max-w-sm mx-auto px-6">
         <div className="mb-8 text-center">
+          <Image
+            src="/logo.svg"
+            alt="Grüne Designs"
+            width={180}
+            height={48}
+            className="mx-auto h-16 w-auto mb-4"
+            priority
+          />
           <h1 className="text-xl font-semibold text-foreground tracking-tight">
             Grüne Platform
           </h1>
