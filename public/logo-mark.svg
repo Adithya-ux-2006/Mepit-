@@ -1,16 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
-  <!-- Rounded rectangle background split diagonally -->
   <clipPath id="roundedRect">
     <rect x="4" y="4" width="112" height="112" rx="32" ry="32"/>
   </clipPath>
   <g clip-path="url(#roundedRect)">
-    <!-- Left half - bright green -->
     <polygon points="0,0 60,0 60,120 0,120" fill="#7ED321"/>
-    <!-- Right half - dark green -->
     <polygon points="60,0 120,0 120,120 60,120" fill="#1A6E3B"/>
-    <!-- Diagonal split -->
     <polygon points="40,0 80,0 60,120 40,120" fill="#1A6E3B" opacity="0.6"/>
   </g>
-  <!-- Stylized G shape -->
   <path d="M85 42C85 30 73 22 60 22C47 22 35 30 35 42V78C35 90 47 98 60 98C68 98 74 95 78 90L68 82C66 84 63 85 60 85C52 85 48 80 48 78V42H62V52H80C79 56 78 60 78 60L85 42Z" fill="white" opacity="0.95"/>
 </svg>

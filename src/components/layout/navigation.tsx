@@ -40,11 +40,11 @@ export function Navigation() {
       <div className="px-5 py-4 border-b border-sidebar-border">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <Image
-            src="/logo-mark.svg"
+            src="/grune-logo.png"
             alt="Grüne Designs"
             width={32}
             height={32}
-            className="rounded-lg"
+            className="rounded-lg object-contain"
             priority
           />
           <span className="text-sm font-bold text-sidebar-foreground tracking-tight">

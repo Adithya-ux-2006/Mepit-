@@ -59,11 +59,11 @@ export default function LoginPage() {
       <div className="w-full max-w-sm mx-auto px-6">
         <div className="mb-8 text-center">
           <Image
-            src="/logo.svg"
+            src="/grune-logo.png"
             alt="Grüne Designs"
             width={180}
-            height={48}
-            className="mx-auto h-16 w-auto mb-4"
+            height={180}
+            className="mx-auto h-16 w-auto mb-4 object-contain"
             priority
           />
           <h1 className="text-xl font-semibold text-foreground tracking-tight">
