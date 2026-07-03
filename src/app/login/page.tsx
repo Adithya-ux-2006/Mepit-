@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -48,8 +47,9 @@ export default function LoginPage() {
       });
 
       if (!sessionRes.ok) {
-        const body = await sessionRes.json().catch(() => ({ error: 'Session creation failed' }));
-        throw new Error(body.error || `Server rejected login (HTTP ${sessionRes.status}). Check that the server environment is configured correctly.`);
+        const body = await sessionRes.json().catch(() => ({ error: null }));
+        const msg = body?.error || `Server error (HTTP ${sessionRes.status}). Please try again or contact support.`;
+        throw new Error(msg);
       }
 
       router.push('/dashboard');
@@ -66,13 +66,10 @@ export default function LoginPage() {
     <div className="flex flex-1 items-center justify-center min-h-screen bg-background">
       <div className="w-full max-w-sm mx-auto px-6">
         <div className="mb-8 text-center">
-          <Image
+          <img
             src="/grune-logo.png"
             alt="Grüne Designs"
-            width={180}
-            height={180}
             className="mx-auto h-16 w-auto mb-4 object-contain"
-            priority
           />
           <h1 className="text-xl font-semibold text-foreground tracking-tight">
             Grüne Platform
