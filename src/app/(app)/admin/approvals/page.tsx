@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { RoleGuard } from '@/components/layout/role-guard';
-import { getProjectsByStatus, updateProjectStatus, createAuditLog } from '@/lib/services';
+import { getProjectsByStatus, updateProjectStatus, createAuditLog } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
   Card,

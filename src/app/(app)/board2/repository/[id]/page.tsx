@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, deleteProjectKpiOutputs } from '@/lib/services';
+import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, deleteProjectKpiOutputs } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import {

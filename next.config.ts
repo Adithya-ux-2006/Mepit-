@@ -31,34 +31,34 @@ const securityHeaders = [
   },
 ];
 
+const productionHeaders = [
+  {
+    key: 'Content-Security-Policy',
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://www.googleapis.com https://securetoken.google.com https://apis.google.com https://www.gstatic.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: blob:",
+      "connect-src 'self' https://*.firebaseio.com https://*.googleapis.com https://*.supabase.co wss://*.supabase.co",
+      "frame-ancestors 'self'",
+    ].join('; '),
+  },
+];
+
 const nextConfig: NextConfig = {
   async headers() {
+    const cspEntry = process.env.NODE_ENV === 'production'
+      ? [{ source: '/(.*)', headers: productionHeaders }]
+      : [];
+
     return [
       {
         // Apply security headers to all routes
         source: '/(.*)',
         headers: securityHeaders,
       },
-      {
-        // Apply Content-Security-Policy only in production
-        source: '/(.*)',
-        headers: process.env.NODE_ENV === 'production'
-          ? [
-              {
-                key: 'Content-Security-Policy',
-                value: [
-                  "default-src 'self'",
-                  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googleapis.com https://securetoken.google.com",
-                  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-                  "font-src 'self' https://fonts.gstatic.com",
-                  "img-src 'self' data: blob:",
-                  "connect-src 'self' https://*.firebaseio.com https://*.googleapis.com https://*.supabase.co wss://*.supabase.co",
-                  "frame-ancestors 'self'",
-                ].join('; '),
-              },
-            ]
-          : [],
-      },
+      ...cspEntry,
     ];
   },
 };

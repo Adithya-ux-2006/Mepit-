@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { getProjects, getKpiFormulas } from '@/lib/services';
+import { getProjects, getKpiFormulas } from '@/lib/api';
 import { runLearningEngine } from '@/lib/learning-engine';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

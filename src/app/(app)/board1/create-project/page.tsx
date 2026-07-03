@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { createProject, upsertProjectInputs, updateProjectStatus, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, getProjectInputs, validateProjectInputs, type ValidationError } from '@/lib/services';
+import { createProject, upsertProjectInputs, updateProjectStatus, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, getProjectInputs, validateProjectInputs, type ValidationError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

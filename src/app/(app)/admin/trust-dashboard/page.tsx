@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { RoleGuard } from '@/components/layout/role-guard';
-import { getProjects, getKpiFormulas } from '@/lib/services';
+import { getProjects, getKpiFormulas } from '@/lib/api';
 import {
   Card,
   CardContent,

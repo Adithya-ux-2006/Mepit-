@@ -3,8 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User as FirebaseUser, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth, isConfigured as isFirebaseConfigured } from '@/lib/firebase';
-import { supabase, isConfigured as isSupabaseConfigured } from '@/lib/supabase';
-import { upsertUser, getUserByEmail } from '@/lib/services';
+import { getCurrentUser } from '@/lib/api';
 import type { Role, User } from '@/types';
 
 interface AuthContextValue {
@@ -30,21 +29,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const syncUser = async (email: string, name: string) => {
-    if (!supabase || !isSupabaseConfigured) return null;
-    try {
-      const existing = await getUserByEmail(email);
-      if (existing) {
-        setUser(existing);
-        return existing;
+  /**
+   * Sync the current Firebase user with our users table via the API.
+   * The /api/users/me endpoint verifies the session cookie, looks up
+   * the user by email, and creates them if they don't exist.
+   * Retries up to 3 times to handle the case where the session cookie
+   * hasn't been set yet (e.g. on first login before redirect).
+   */
+  const syncUser = async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const userData = await getCurrentUser();
+        if (userData) {
+          setUser(userData);
+          return userData;
+        }
+        // If null, session cookie might not be set yet — retry
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+          continue;
+        }
+        return null;
+      } catch {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+          continue;
+        }
+        return null;
       }
-      const newUser = await upsertUser({ email, name, role: 'contributor' });
-      setUser(newUser);
-      return newUser;
-    } catch (err) {
-      console.error('Failed to sync user with Supabase:', err);
-      return null;
     }
+    return null;
   };
 
   useEffect(() => {
@@ -56,8 +70,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       try {
-        if (fbUser?.email && supabase && isSupabaseConfigured) {
-          await syncUser(fbUser.email, fbUser.displayName ?? '');
+        if (fbUser) {
+          await syncUser();
         } else {
           setUser(null);
         }
@@ -81,9 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (firebaseUser?.email) {
-      await syncUser(firebaseUser.email, firebaseUser.displayName ?? '');
-    }
+    await syncUser();
   };
 
   return (
