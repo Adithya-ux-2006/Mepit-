@@ -3,7 +3,7 @@
 import { useEffect, useState, startTransition } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { getProjects, getKpiFormulas, getAuditLogs, getRateLimitStatus } from '@/lib/api';
+import { getProjects, getKpiFormulas, getAuditLogs, getRateLimitStatus, getUserProjects, updateProjectStatus } from '@/lib/api';
 import type { RateLimitStatus } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FilePlus, FolderOpen, BarChart3, CheckCircle, Clock, FileText, Activity, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -17,19 +17,25 @@ export default function DashboardPage() {
   const [recentActivity, setRecentActivity] = useState<AuditLog[]>([]);
   const [rateLimitData, setRateLimitData] = useState<RateLimitStatus | null>(null);
   const [rlLoading, setRlLoading] = useState(false);
+  const [myProjects, setMyProjects] = useState<Project[]>([]);
 
   useEffect(() => {
-    Promise.all([getProjects(), getKpiFormulas(), getAuditLogs()])
-      .then(([p, f, logs]) => {
+    const fetches: Promise<unknown>[] = [getProjects(), getKpiFormulas(), getAuditLogs()];
+    if (user?.id) {
+      fetches.push(getUserProjects(user.id));
+    }
+    Promise.all(fetches)
+      .then(([p, f, logs, mine]) => {
         startTransition(() => {
-          setProjects(p);
-          setFormulaCount(f.length);
-          setRecentActivity(logs.slice(0, 10));
+          setProjects(p as Project[]);
+          setFormulaCount((f as unknown[]).length);
+          setRecentActivity((logs as AuditLog[]).slice(0, 10));
+          if (mine) setMyProjects(mine as Project[]);
         });
       })
       .catch(() => {})
       .finally(() => startTransition(() => setLoading(false)));
-  }, []);
+  }, [user?.id]);
 
   // Fetch rate limit status for admins
   useEffect(() => {
@@ -151,6 +157,81 @@ export default function DashboardPage() {
           </Card>
         </Link>
       </div>
+
+      {/* My Projects */}
+      {myProjects.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-4 w-4" />
+              My Projects
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {myProjects.map((p) => (
+                <div key={p.id} className="flex items-center justify-between text-xs py-1.5">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={p.status === 'draft' || p.status === 'rejected' ? `/board1/create-project?id=${p.id}` : `/board2/repository/${p.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {p.project_name}
+                    </Link>
+                    <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${
+                      p.status === 'approved' ? 'bg-green-50 text-green-700' :
+                      p.status === 'submitted' || p.status === 'under_review' ? 'bg-yellow-50 text-yellow-700' :
+                      p.status === 'rejected' ? 'bg-red-50 text-red-700' :
+                      'bg-gray-50 text-gray-600'
+                    }`}>
+                      {p.status}
+                    </span>
+                    {p.status === 'rejected' && p.rejection_reason && (
+                      <span className="text-red-600 truncate max-w-[200px]" title={p.rejection_reason}>
+                        — {p.rejection_reason}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {p.status === 'draft' && (
+                      <>
+                        <Link href={`/board1/create-project?id=${p.id}`} className="text-primary hover:underline">
+                          Edit
+                        </Link>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await updateProjectStatus(p.id, 'submitted');
+                              const mine = await getUserProjects(user!.id);
+                              startTransition(() => setMyProjects(mine));
+                            } catch {}
+                          }}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          Submit
+                        </button>
+                      </>
+                    )}
+                    {p.status === 'rejected' && (
+                      <Link href={`/board1/create-project?id=${p.id}`} className="text-primary hover:underline font-medium">
+                        Edit & Resubmit
+                      </Link>
+                    )}
+                    {p.status === 'submitted' && (
+                      <span className="text-muted-foreground">Awaiting review</span>
+                    )}
+                    {p.status === 'approved' && (
+                      <Link href={`/board2/repository/${p.id}`} className="text-primary hover:underline">
+                        View
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Activity */}
       {recentActivity.length > 0 && (

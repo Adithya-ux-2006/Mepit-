@@ -9,7 +9,7 @@ const VALID_STATUSES: ProjectStatus[] = ['draft', 'submitted', 'under_review', '
 function isValidTransition(current: ProjectStatus, next: ProjectStatus): boolean {
   const allowed: Record<ProjectStatus, ProjectStatus[]> = {
     draft: ['submitted'],
-    submitted: ['draft', 'under_review'],
+    submitted: ['draft', 'under_review', 'rejected'],
     under_review: ['approved', 'rejected', 'draft'],
     approved: ['draft'],
     rejected: ['draft'],
@@ -26,7 +26,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await request.json();
-  const { status: rawStatus } = body as { status?: string };
+  const { status: rawStatus, rejection_reason } = body as { status?: string; rejection_reason?: string };
 
   if (!rawStatus || !VALID_STATUSES.includes(rawStatus as ProjectStatus)) {
     return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
@@ -59,6 +59,8 @@ export async function PATCH(
     currentStatus === 'draft' && nextStatus === 'submitted'
   ) || (
     currentStatus === 'submitted' && nextStatus === 'draft'
+  ) || (
+    currentStatus === 'rejected' && nextStatus === 'draft'
   );
 
   if (isContributorAction) {
@@ -86,7 +88,16 @@ export async function PATCH(
   if (nextStatus === 'approved') {
     update.approved_at = new Date().toISOString();
     update.approved_by = actorId;
+    update.rejection_reason = null;
   }
+
+  if (nextStatus === 'rejected') {
+    update.rejection_reason = rejection_reason ?? null;
+    update.approved_at = null;
+    update.approved_by = null;
+  }
+
+  // Keep rejection_reason until approved; it stays visible to the contributor during rework
 
   const { error: dbError } = await admin
     .from('projects')

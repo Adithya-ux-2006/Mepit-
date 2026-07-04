@@ -137,16 +137,32 @@ export default function ProjectDetailPage() {
             {project.typology} &middot; {project.location_city}, {project.location_state} &middot; {project.project_year}
           </p>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <span className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
             project.status === 'approved' ? 'bg-green-50 text-green-700' :
             project.status === 'submitted' || project.status === 'under_review' ? 'bg-yellow-50 text-yellow-700' :
+            project.status === 'rejected' ? 'bg-red-50 text-red-700' :
             'bg-gray-50 text-gray-600'
           }`}>
             {project.status}
           </span>
+          {(project.status === 'draft' || project.status === 'rejected') && (
+            <Link
+              href={`/board1/create-project?id=${project.id}`}
+              className="text-xs text-primary hover:underline font-medium"
+            >
+              Edit & Resubmit
+            </Link>
+          )}
         </div>
       </div>
+
+      {project.status === 'rejected' && project.rejection_reason && (
+        <div className="border border-red-200 bg-red-50 rounded-lg p-4">
+          <p className="text-sm font-medium text-red-700">Project Rejected</p>
+          <p className="text-xs text-red-600 mt-1">{project.rejection_reason}</p>
+        </div>
+      )}
 
       {/* Project Summary */}
       <Card>

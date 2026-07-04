@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { createProject, upsertProjectInputs, updateProjectStatus, createAuditLog, validateProjectInputs, type ValidationError } from '@/lib/api';
+import { createProject, upsertProjectInputs, updateProjectStatus, createAuditLog, validateProjectInputs, getProjectById, updateProject, type ValidationError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -263,27 +263,94 @@ export default function CreateProjectPage() {
     return errors;
   }, []);
 
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('id');
+  const [loadingProject, setLoadingProject] = useState(!!editId);
+  const [existingProjectId, setExistingProjectId] = useState<string | null>(editId);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editId) return;
+    getProjectById(editId).then((p) => {
+      if (!p) return;
+      if (p.status !== 'draft' && p.status !== 'rejected') {
+        // Can only edit draft or rejected projects
+        return;
+      }
+      setForm({
+        project_name: p.project_name,
+        typology: p.typology,
+        location_city: p.location_city,
+        location_state: p.location_state,
+        project_year: p.project_year,
+        built_up_area: p.built_up_area,
+        carpet_area: p.carpet_area,
+        saleable_area: p.saleable_area,
+        leasable_area: p.leasable_area,
+        // Input fields stay as defaults until we fetch inputs separately
+        plant_room_area: null,
+        leasable_plant_room_area: null,
+        shaft_area: null,
+        office_area: null,
+        fb_area: null,
+        gross_area: null,
+        occupancy_density_office: null,
+        occupancy_density_fb: null,
+        total_tr: null,
+        total_airflow_cfm: null,
+        hvac_strategy: '',
+        transformer_capacity_kva: null,
+        tenant_power_kva: null,
+        common_area_power_kva: null,
+        lighting_load_w: null,
+        dg_capacity_kva: null,
+        dg_loading_factor: null,
+        annual_energy_kwh: null,
+        hvac_cost: null,
+        electrical_cost: null,
+        dg_cost: null,
+        fire_fighting_cost: null,
+        stp_cost: null,
+        phe_cost: null,
+        bms_cost: null,
+        fapa_cost: null,
+        cctv_cost: null,
+        total_mep_cost: null,
+        operating_hours: null,
+      });
+      setExistingProjectId(p.id);
+      if (p.status === 'rejected') {
+        setRejectionReason(p.rejection_reason);
+      }
+      setLoadingProject(false);
+    });
+  }, [editId]);
+
   const persist = async (status: 'draft' | 'submitted') => {
     if (!user) return;
     setError('');
     setSubmitting(true);
-    try {
-      const project = await createProject(
-        {
-          project_name: form.project_name,
-          typology: form.typology,
-          location_city: form.location_city,
-          location_state: form.location_state,
-          project_year: form.project_year,
-          built_up_area: form.built_up_area ?? 0,
-          carpet_area: form.carpet_area ?? 0,
-          saleable_area: form.saleable_area ?? 0,
-          leasable_area: form.leasable_area ?? 0,
-        },
-        user.id
-      );
 
-      await upsertProjectInputs(project.id, {
+    const projectData = {
+      project_name: form.project_name,
+      typology: form.typology,
+      location_city: form.location_city,
+      location_state: form.location_state,
+      project_year: form.project_year,
+      built_up_area: form.built_up_area ?? 0,
+      carpet_area: form.carpet_area ?? 0,
+      saleable_area: form.saleable_area ?? 0,
+      leasable_area: form.leasable_area ?? 0,
+    };
+
+    try {
+      const project = existingProjectId
+        ? await updateProject(existingProjectId, projectData)
+        : await createProject(projectData, user.id);
+
+      const projectId = project.id;
+
+      await upsertProjectInputs(projectId, {
         plant_room_area: form.plant_room_area,
         leasable_plant_room_area: form.leasable_plant_room_area,
         shaft_area: form.shaft_area,
@@ -324,10 +391,10 @@ export default function CreateProjectPage() {
         }
 
         // Move to submitted — no longer auto-approves. An admin must review.
-        await updateProjectStatus(project.id, 'submitted');
+        await updateProjectStatus(projectId, 'submitted');
         await createAuditLog({
           entity_type: 'project',
-          entity_id: project.id,
+          entity_id: projectId,
           action: 'submitted',
           performed_by: user.id,
         });
@@ -342,14 +409,30 @@ export default function CreateProjectPage() {
     }
   };
 
+  if (loadingProject) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-sm text-muted-foreground">Loading project...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">New Project</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : 'New Project'}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Enter project details from the Grüne Basis Requirements workbook.
+          {existingProjectId ? 'Update project details and resubmit for review.' : 'Enter project details from the Grüne Basis Requirements workbook.'}
         </p>
       </div>
+
+      {rejectionReason && (
+        <div className="border border-red-200 bg-red-50 rounded-lg p-4">
+          <p className="text-sm font-medium text-red-700">This project was previously rejected.</p>
+          <p className="text-xs text-red-600 mt-1">Reason: {rejectionReason}</p>
+          <p className="text-xs text-red-500 mt-1">Fix the issues above and resubmit for review.</p>
+        </div>
+      )}
 
       <form
         onSubmit={(e) => { e.preventDefault(); persist('draft'); }}

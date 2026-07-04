@@ -85,6 +85,30 @@ export async function getProjectsByStatus(
   return apiFetch<Project[]>(`/api/projects/by-status/${encodeURIComponent(status)}`);
 }
 
+export async function getUserProjects(userId: string): Promise<Project[]> {
+  return apiFetch<Project[]>(`/api/projects?submitted_by=${encodeURIComponent(userId)}`);
+}
+
+export async function updateProject(
+  id: string,
+  data: {
+    project_name?: string;
+    typology?: string;
+    location_city?: string;
+    location_state?: string;
+    project_year?: number;
+    built_up_area?: number;
+    carpet_area?: number;
+    saleable_area?: number;
+    leasable_area?: number;
+  },
+): Promise<Project> {
+  return apiFetch<Project>(`/api/projects/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getProjectById(id: string): Promise<Project | null> {
   try {
     return await apiFetch<Project>(`/api/projects/${encodeURIComponent(id)}`);
@@ -117,10 +141,11 @@ export async function updateProjectStatus(
   id: string,
   status: Project['status'],
   approvedBy?: string,
+  rejection_reason?: string,
 ): Promise<void> {
   await apiFetch(`/api/projects/${encodeURIComponent(id)}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({ status, approvedBy }),
+    body: JSON.stringify({ status, approvedBy, rejection_reason }),
   });
 }
 

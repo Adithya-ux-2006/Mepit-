@@ -28,6 +28,7 @@ export interface Project {
   status: ProjectStatus;
   submitted_by: string;
   approved_by: string | null;
+  rejection_reason: string | null;
   created_at: string;
   approved_at: string | null;
   version: number;

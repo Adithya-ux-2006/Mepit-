@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { RoleGuard } from '@/components/layout/role-guard';
 import { getProjectsByStatus, updateProjectStatus, getKpiFormulas, getProjectInputs, calculateAndStoreKpiOutputs } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
@@ -19,6 +20,8 @@ function ApprovalsContent() {
   const [approved, setApproved] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -42,7 +45,6 @@ function ApprovalsContent() {
     try {
       await updateProjectStatus(project.id, 'approved', user.id);
 
-      // Run formula engine now that the project is approved
       const [formulas, inputs] = await Promise.all([
         getKpiFormulas(),
         getProjectInputs(project.id),
@@ -59,7 +61,35 @@ function ApprovalsContent() {
     }
   };
 
-  const handleRevert = async (project: Project) => {
+  const handleReject = async (project: Project) => {
+    if (!user || !rejectionReason.trim()) return;
+    setProcessing(project.id);
+    try {
+      await updateProjectStatus(project.id, 'rejected', undefined, rejectionReason.trim());
+      setRejectingId(null);
+      setRejectionReason('');
+      setProcessing(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      setProcessing(null);
+    }
+  };
+
+  const handleRevertToDraft = async (project: Project) => {
+    if (!user) return;
+    setProcessing(project.id);
+    try {
+      await updateProjectStatus(project.id, 'draft');
+      setProcessing(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      setProcessing(null);
+    }
+  };
+
+  const handleRevertApproved = async (project: Project) => {
     if (!user) return;
     setProcessing(project.id);
     try {
@@ -126,23 +156,63 @@ function ApprovalsContent() {
                   <p className="font-medium">{project.project_year}</p>
                 </div>
               </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  size="sm"
-                  onClick={() => handleApprove(project)}
-                  disabled={processing === project.id}
-                >
-                  {processing === project.id ? 'Approving...' : 'Approve'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleRevert(project)}
-                  disabled={processing === project.id}
-                >
-                  Send Back to Draft
-                </Button>
-              </div>
+
+              {rejectingId === project.id ? (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-xs font-medium text-red-600">Rejection reason:</p>
+                  <Input
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Explain why this project is being rejected..."
+                    className="h-8 text-sm"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleReject(project)}
+                      disabled={processing === project.id || !rejectionReason.trim()}
+                    >
+                      {processing === project.id ? 'Rejecting...' : 'Confirm Reject'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setRejectingId(null); setRejectionReason(''); }}
+                      disabled={processing === project.id}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleApprove(project)}
+                    disabled={processing === project.id}
+                  >
+                    {processing === project.id ? 'Approving...' : 'Approve'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setRejectingId(project.id); setRejectionReason(''); }}
+                    disabled={processing === project.id}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleRevertToDraft(project)}
+                    disabled={processing === project.id}
+                  >
+                    Send Back to Draft
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -188,7 +258,7 @@ function ApprovalsContent() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handleRevert(project)}
+                onClick={() => handleRevertApproved(project)}
                 disabled={processing === project.id}
               >
                 {processing === project.id ? 'Reverting...' : 'Revert to Draft'}

@@ -11,11 +11,23 @@ export async function GET(request: NextRequest) {
   const [, error] = await requireAuth(request);
   if (error) return error;
 
+  const { searchParams } = request.nextUrl;
+  const submittedBy = searchParams.get('submitted_by');
+  const statusIn = searchParams.get('status_in');
+
   const admin = getSupabaseAdmin();
-  const { data, error: dbError } = await admin
-    .from('projects')
-    .select('*')
-    .order('created_at', { ascending: false });
+  let query = admin.from('projects').select('*');
+
+  if (submittedBy) {
+    query = query.eq('submitted_by', submittedBy);
+  }
+
+  if (statusIn) {
+    const statuses = statusIn.split(',');
+    query = query.in('status', statuses);
+  }
+
+  const { data, error: dbError } = await query.order('created_at', { ascending: false });
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
   return NextResponse.json(data ?? []);
