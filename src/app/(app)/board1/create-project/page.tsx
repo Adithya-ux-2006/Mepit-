@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { createProject, upsertProjectInputs, updateProjectStatus, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, getProjectInputs, validateProjectInputs, type ValidationError } from '@/lib/api';
+import { createProject, upsertProjectInputs, updateProjectStatus, createAuditLog, validateProjectInputs, type ValidationError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -323,15 +323,8 @@ export default function CreateProjectPage() {
           return;
         }
 
-        // Auto-approve: run formula engine and log audit
-        await updateProjectStatus(project.id, 'approved', user.id);
-        const [formulas, inputs] = await Promise.all([
-          getKpiFormulas(),
-          getProjectInputs(project.id),
-        ]);
-        if (inputs) {
-          await calculateAndStoreKpiOutputs(project.id, inputs, formulas, project);
-        }
+        // Move to submitted — no longer auto-approves. An admin must review.
+        await updateProjectStatus(project.id, 'submitted');
         await createAuditLog({
           entity_type: 'project',
           entity_id: project.id,

@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
+import type { ProjectStatus } from '@/types';
+
+const VALID_STATUSES: ProjectStatus[] = ['draft', 'submitted', 'under_review', 'approved', 'rejected'];
+
+function isValidTransition(current: ProjectStatus, next: ProjectStatus): boolean {
+  const allowed: Record<ProjectStatus, ProjectStatus[]> = {
+    draft: ['submitted'],
+    submitted: ['draft', 'under_review'],
+    under_review: ['approved', 'rejected', 'draft'],
+    approved: ['draft'],
+    rejected: ['draft'],
+  };
+  return allowed[current]?.includes(next) ?? false;
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -10,23 +24,68 @@ export async function PATCH(
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
-  if (error) return error;
-
   const { id } = await params;
   const body = await request.json();
-  const { status } = body as { status?: string };
+  const { status: rawStatus } = body as { status?: string };
 
-  if (!status) {
-    return NextResponse.json({ error: 'status is required' }, { status: 400 });
+  if (!rawStatus || !VALID_STATUSES.includes(rawStatus as ProjectStatus)) {
+    return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
   }
 
+  const nextStatus = rawStatus as ProjectStatus;
   const admin = getSupabaseAdmin();
 
-  const update: Record<string, unknown> = { status };
-  if (status === 'approved') {
+  // Fetch current project
+  const { data: project, error: fetchError } = await admin
+    .from('projects')
+    .select('status, submitted_by')
+    .eq('id', id)
+    .single();
+
+  if (fetchError || !project) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+  }
+
+  const currentStatus = project.status as ProjectStatus;
+
+  if (!isValidTransition(currentStatus, nextStatus)) {
+    return NextResponse.json({
+      error: `Cannot transition from '${currentStatus}' to '${nextStatus}'`,
+    }, { status: 400 });
+  }
+
+  // Authorization check
+  const isContributorAction = (
+    currentStatus === 'draft' && nextStatus === 'submitted'
+  ) || (
+    currentStatus === 'submitted' && nextStatus === 'draft'
+  );
+
+  if (isContributorAction) {
+    // Contributor can only move their own project
+    const [user, authError] = await requireAuth(request);
+    if (authError) return authError;
+    // Check ownership via the project DB lookup we already did
+    if (project.submitted_by !== user.dbUserId && user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+  } else {
+    // All other transitions (under_review, approved, rejected, admin revert)
+    // require admin role
+    const [, authError] = await requireAdmin(request);
+    if (authError) return authError;
+  }
+
+  // Build the update payload
+  const update: Record<string, unknown> = { status: nextStatus };
+
+  // Determine who performed the action
+  const [user, ] = await requireAuth(request);
+  const actorId = user?.dbUserId;
+
+  if (nextStatus === 'approved') {
     update.approved_at = new Date().toISOString();
-    update.approved_by = user.dbUserId; // Always use server-side identity, never trust client
+    update.approved_by = actorId;
   }
 
   const { error: dbError } = await admin
@@ -35,5 +94,21 @@ export async function PATCH(
     .eq('id', id);
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
-  return NextResponse.json({ success: true });
+
+  // Audit log
+  const { error: auditError } = await admin
+    .from('audit_log')
+    .insert({
+      entity_type: 'project',
+      entity_id: id,
+      action: nextStatus,
+      performed_by: actorId,
+      metadata: { previous_status: currentStatus },
+    });
+
+  if (auditError) {
+    console.error('Failed to write audit log for status transition:', auditError);
+  }
+
+  return NextResponse.json({ success: true, previous_status: currentStatus });
 }
