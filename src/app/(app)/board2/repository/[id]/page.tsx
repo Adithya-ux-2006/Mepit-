@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, deleteProjectKpiOutputs } from '@/lib/api';
+import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, deleteProjectKpiOutputs, previewKpiOutputs, getValidationRules } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
@@ -13,18 +15,25 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ArrowLeft, Pencil, Save, X } from 'lucide-react';
-import type { Project, ProjectInputs, ProjectKpiOutput, KpiFormula } from '@/types';
+import type { Project, ProjectInputs, ProjectKpiOutput, KpiFormula, ValidationRule } from '@/types';
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
 }
 
-// Grüne Basis benchmarks for KPI compliance indicators
 function getBenchmark(
   kpiCode: string,
   val: number | null | undefined,
+  formula?: KpiFormula | null,
 ): { status: 'good' | 'warn'; note: string } | null {
   if (val == null || val === 0) return null;
+
+  // Prefer DB-stored benchmarks if available
+  if (formula?.min_benchmark != null && formula?.max_benchmark != null) {
+    const status: 'good' | 'warn' = val >= formula.min_benchmark && val <= formula.max_benchmark ? 'good' : 'warn';
+    return { status, note: formula.benchmark_note ?? `Target: ${formula.min_benchmark}–${formula.max_benchmark}` };
+  }
+
   switch (kpiCode) {
     case 'PLANT_ROOM_PCT':
       return val >= 3 && val <= 5
@@ -61,7 +70,7 @@ function getBenchmark(
     case 'TOTAL_MEP_RS_SQFT':
       return val >= 500 && val <= 900
         ? { status: 'good', note: 'Within aggregate MEP benchmark' }
-        : { status: 'warn', note: `Check individual package costs vs BUA` };
+        : { status: 'warn', note: 'Check individual package costs vs BUA' };
     default:
       return null;
   }
@@ -78,27 +87,95 @@ export default function ProjectDetailPage() {
   const [editForm, setEditForm] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [previewOutputs, setPreviewOutputs] = useState<OutputWithKpi[]>([]);
+  const [, setValidationRules] = useState<ValidationRule[]>([]);
+  const [validationResults, setValidationResults] = useState<{ field: string; passed: boolean; message: string }[]>([]);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const { user } = useAuth();
 
-  const fetchData = () => {
+  const loadData = () => {
     if (!id) return;
     setLoading(true);
     Promise.all([
       getProjectById(id),
       getProjectInputs(id),
       getProjectKpiOutputs(id),
+      getKpiFormulas(),
+      getValidationRules(),
     ])
-      .then(([p, i, o]) => {
+      .then(([p, i, o,, rules]) => {
         setProject(p);
         setInputs(i);
         setOutputs(o);
+        setValidationRules(rules);
+
+        // Compute validation results from inputs
+        if (i && p) {
+          const formData: Record<string, unknown> = {
+            project_name: p.project_name,
+            typology: p.typology,
+            built_up_area: p.built_up_area,
+            carpet_area: p.carpet_area,
+            saleable_area: p.saleable_area,
+            leasable_area: p.leasable_area,
+            ...Object.fromEntries(
+              Object.entries(i).filter(([k]) => !['id', 'project_id', 'extended_fields'].includes(k))
+            ),
+          };
+          const results = rules.map((r) => {
+            const val = formData[r.field_name];
+            const expr = r.rule_expression;
+            switch (r.rule_type) {
+              case 'required': {
+                const min = typeof expr.min === 'number' ? expr.min : undefined;
+                const passed = !(
+                  val == null ||
+                  (typeof val === 'string' && val.trim() === '') ||
+                  (typeof val === 'number' && min !== undefined && val < min)
+                );
+                return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
+              }
+              case 'min_value': {
+                const min = typeof expr.min === 'number' ? expr.min : 0;
+                const passed = typeof val !== 'number' || val >= min;
+                return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
+              }
+              case 'max_value': {
+                const max = typeof expr.max === 'number' ? expr.max : Infinity;
+                const passed = typeof val !== 'number' || val <= max;
+                return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
+              }
+              case 'cross_field':
+                if (typeof expr.max_field === 'string') {
+                  const ref = formData[expr.max_field];
+                  const passed = typeof val !== 'number' || typeof ref !== 'number' || val <= ref;
+                  return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
+                }
+                return { field: r.field_name, passed: true, message: 'Passed' };
+              default:
+                return { field: r.field_name, passed: true, message: 'Passed' };
+            }
+          });
+          setValidationResults(results);
+        }
+
+        // Preview KPIs for submitted/under_review projects (not yet approved)
+        if (p && (p.status === 'submitted' || p.status === 'under_review') && i) {
+          previewKpiOutputs(id).then((preview) => {
+            setPreviewOutputs(preview);
+          }).catch(() => {});
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { setTimeout(fetchData, 0); }, [id]);
+  const actions = useReviewActions(() => {
+    setReviewError(null);
+    loadData();
+  });
 
+  useEffect(() => { setTimeout(loadData, 0); }, [id]);
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -116,8 +193,9 @@ export default function ProjectDetailPage() {
   }
 
   const categoryOrder = ['Space Planning', 'HVAC', 'Electrical', 'DG', 'Sustainability', 'Cost'] as const;
+  const kpisToShow = outputs.length > 0 ? outputs : previewOutputs;
   const outputsByCategory: Record<string, OutputWithKpi[]> = {};
-  for (const o of outputs) {
+  for (const o of kpisToShow) {
     const cat = o.kpi_formula?.category ?? 'Other';
     if (!outputsByCategory[cat]) outputsByCategory[cat] = [];
     outputsByCategory[cat].push(o);
@@ -147,10 +225,7 @@ export default function ProjectDetailPage() {
             {project.status}
           </span>
           {(project.status === 'draft' || project.status === 'rejected') && (
-            <Link
-              href={`/board1/create-project?id=${project.id}`}
-              className="text-xs text-primary hover:underline font-medium"
-            >
+            <Link href={`/board1/create-project?id=${project.id}`} className="text-xs text-primary hover:underline font-medium">
               Edit & Resubmit
             </Link>
           )}
@@ -162,6 +237,69 @@ export default function ProjectDetailPage() {
           <p className="text-sm font-medium text-red-700">Project Rejected</p>
           <p className="text-xs text-red-600 mt-1">{project.rejection_reason}</p>
         </div>
+      )}
+
+      {project.status === 'draft' && project.rejection_reason && (
+        <div className="border border-amber-200 bg-amber-50 rounded-lg p-4">
+          <p className="text-sm font-medium text-amber-700">Returned for changes</p>
+          <p className="text-xs text-amber-600 mt-1">{project.rejection_reason}</p>
+        </div>
+      )}
+
+      {/* Review actions for admin */}
+      {(project.status === 'submitted' || project.status === 'under_review') && user?.role === 'admin' && (
+        <Card className="border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-base">Review Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {reviewError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 mb-2">{reviewError}</p>
+            )}
+            {actions.error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 mb-2">{actions.error}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {project.status === 'submitted' ? (
+                <Button size="sm" onClick={async () => { const ok = await actions.startReview(project); if (ok) loadData(); }} disabled={actions.processing === project.id}>
+                  {actions.processing === project.id ? 'Starting...' : 'Start Review'}
+                </Button>
+              ) : (
+                <>
+                  <Button size="sm" onClick={async () => { const ok = await actions.approve(project); if (ok) loadData(); }} disabled={actions.processing === project.id}>
+                    {actions.processing === project.id ? 'Approving...' : 'Approve'}
+                  </Button>
+                  {actions.rejectingId === project.id ? (
+                    <RejectInline
+                      reason={actions.rejectionReason}
+                      onReasonChange={actions.setRejectionReason}
+                      onConfirm={async () => { const ok = await actions.reject(project); if (ok) loadData(); }}
+                      onCancel={() => { actions.setRejectingId(null); actions.setRejectionReason(''); }}
+                      processing={actions.processing === project.id}
+                    />
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => { actions.setRejectingId(project.id); actions.setRejectionReason(''); }} disabled={actions.processing === project.id}>
+                      Reject
+                    </Button>
+                  )}
+                  {actions.returningId === project.id ? (
+                    <ReturnInline
+                      reason={actions.returnReason}
+                      onReasonChange={actions.setReturnReason}
+                      onConfirm={async () => { const ok = await actions.returnToDraft(project); if (ok) loadData(); }}
+                      onCancel={() => { actions.setReturningId(null); actions.setReturnReason(''); }}
+                      processing={actions.processing === project.id}
+                    />
+                  ) : (
+                    <Button size="sm" variant="ghost" onClick={() => actions.setReturningId(project.id)} disabled={actions.processing === project.id}>
+                      Send Back to Draft
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Project Summary */}
@@ -191,10 +329,40 @@ export default function ProjectDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Validation Results */}
+      {validationResults.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              Validation Results
+              <span className="text-xs text-muted-foreground font-normal">
+                (from Grüne Basis validation rules)
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {validationResults.map((r) => (
+                <div key={r.field} className="flex items-center gap-2 text-xs">
+                  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${r.passed ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span className="font-mono text-muted-foreground w-40 shrink-0">{r.field}</span>
+                  <span className={r.passed ? 'text-green-700' : 'text-red-600'}>{r.message}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPI Outputs */}
-      {outputs.length > 0 && (
+      {kpisToShow.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold tracking-tight">KPI Outputs</h2>
+          <h2 className="text-lg font-semibold tracking-tight">
+            KPI Outputs
+            {(project.status === 'submitted' || project.status === 'under_review') && (
+              <span className="text-xs text-muted-foreground font-normal ml-2">(preview — not yet persisted)</span>
+            )}
+          </h2>
           {categoryOrder.map((cat) => {
             const catOutputs = outputsByCategory[cat];
             if (!catOutputs?.length) return null;
@@ -210,9 +378,9 @@ export default function ProjectDetailPage() {
                     {catOutputs.map((o) => {
                       const formula = o.kpi_formula;
                       const val = o.calculated_value;
-                      const benchmark = getBenchmark(formula?.kpi_code ?? '', val);
+                      const benchmark = getBenchmark(formula?.kpi_code ?? '', val, formula);
                       return (
-                        <div key={o.id} className={`border rounded-lg p-3 ${benchmark?.status === 'warn' ? 'border-amber-300 bg-amber-50/50' : benchmark?.status === 'good' ? 'border-green-200 bg-green-50/30' : 'border-border'}`}>
+                        <div key={o.id ?? o.kpi_formula_id} className={`border rounded-lg p-3 ${benchmark?.status === 'warn' ? 'border-amber-300 bg-amber-50/50' : benchmark?.status === 'good' ? 'border-green-200 bg-green-50/30' : 'border-border'}`}>
                           <p className="text-xs text-muted-foreground truncate" title={formula?.kpi_name}>
                             {formula?.kpi_code}
                           </p>
@@ -256,7 +424,6 @@ export default function ProjectDetailPage() {
                     setSaveError('');
                     try {
                       await upsertProjectInputs(id, editForm);
-                      // Delete old outputs, then recalculate
                       await deleteProjectKpiOutputs(id);
                       const [formulas, updatedInputs] = await Promise.all([
                         getKpiFormulas(),
@@ -273,7 +440,7 @@ export default function ProjectDetailPage() {
                         metadata: { fields: Object.keys(editForm) },
                       });
                       setEditing(false);
-                      fetchData();
+                      loadData();
                     } catch (err) {
                       console.error(err);
                       setSaveError(err instanceof Error ? err.message : 'Save failed');
@@ -357,6 +524,38 @@ export default function ProjectDetailPage() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+function RejectInline({
+  reason, onReasonChange, onConfirm, onCancel, processing,
+}: {
+  reason: string; onReasonChange: (v: string) => void; onConfirm: () => void; onCancel: () => void; processing: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input value={reason} onChange={(e) => onReasonChange(e.target.value)} placeholder="Rejection reason..." className="h-8 text-sm w-64" autoFocus />
+      <Button size="sm" variant="destructive" onClick={onConfirm} disabled={processing || !reason.trim()}>
+        {processing ? 'Rejecting...' : 'Confirm Reject'}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onCancel} disabled={processing}>Cancel</Button>
+    </div>
+  );
+}
+
+function ReturnInline({
+  reason, onReasonChange, onConfirm, onCancel, processing,
+}: {
+  reason: string; onReasonChange: (v: string) => void; onConfirm: () => void; onCancel: () => void; processing: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input value={reason} onChange={(e) => onReasonChange(e.target.value)} placeholder="Reason for returning..." className="h-8 text-sm w-64" autoFocus />
+      <Button size="sm" variant="outline" onClick={onConfirm} disabled={processing}>
+        {processing ? 'Sending...' : 'Confirm Send to Draft'}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onCancel} disabled={processing}>Cancel</Button>
     </div>
   );
 }

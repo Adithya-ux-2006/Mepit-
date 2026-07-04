@@ -205,14 +205,27 @@ export async function getProjectKpiOutputs(
 
 export async function calculateAndStoreKpiOutputs(
   projectId: string,
-  _inputs: ProjectInputs, // kept for signature compatibility; server fetches from DB
-  _formulas: KpiFormula[], // kept for signature compatibility; server fetches from DB
-  _project: { built_up_area: number; carpet_area: number; saleable_area: number }, // kept for signature compatibility
+  _inputs: ProjectInputs,
+  _formulas: KpiFormula[],
+  _project: { built_up_area: number; carpet_area: number; saleable_area: number },
   engineVersion = '1.0',
 ): Promise<ProjectKpiOutput[]> {
   return apiFetch<ProjectKpiOutput[]>(
     `/api/projects/${encodeURIComponent(projectId)}/kpis`,
     { method: 'POST', body: JSON.stringify({ engineVersion }) },
+  );
+}
+
+export interface PreviewKpiOutput extends ProjectKpiOutput {
+  kpi_formula: KpiFormula;
+}
+
+export async function previewKpiOutputs(
+  projectId: string,
+): Promise<PreviewKpiOutput[]> {
+  return apiFetch<PreviewKpiOutput[]>(
+    `/api/projects/${encodeURIComponent(projectId)}/kpis`,
+    { method: 'POST', body: JSON.stringify({ preview: true }) },
   );
 }
 

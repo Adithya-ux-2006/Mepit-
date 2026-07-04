@@ -38,7 +38,8 @@ export async function POST(
 
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const engineVersion = (body as { engineVersion?: string }).engineVersion ?? '1.0';
+  const { engineVersion, preview } = body as { engineVersion?: string; preview?: boolean };
+  const ver = engineVersion ?? '1.0';
   const admin = getSupabaseAdmin();
 
   // Fetch project, inputs, and formulas
@@ -82,9 +83,17 @@ export async function POST(
       project_id: id,
       kpi_formula_id: formula.id,
       calculated_value: result.value,
-      engine_version: engineVersion,
+      engine_version: ver,
       reason_flag: result.value === null ? 'insufficient_inputs' : null,
     });
+  }
+
+  if (preview) {
+    // Return computed values without persisting
+    return NextResponse.json(outputs.map((o, i) => ({
+      ...o,
+      kpi_formula: formulas[i],
+    })));
   }
 
   const { data, error: dbError } = await admin

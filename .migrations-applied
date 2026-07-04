@@ -1,0 +1,7 @@
+# List of migrations applied to the production database.
+# Update this file every time you apply a migration.
+001_initial.sql
+002_grune_schema.sql
+003_grune_validation_rules.sql
+004_lock_down_rls.sql
+005_enforce_rls.sql

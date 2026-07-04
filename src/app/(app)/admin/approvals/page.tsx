@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '@/lib/auth-context';
+import { useRouter } from 'next/navigation';
 import { RoleGuard } from '@/components/layout/role-guard';
-import { getProjectsByStatus, updateProjectStatus, getKpiFormulas, getProjectInputs, calculateAndStoreKpiOutputs } from '@/lib/api';
+import { getProjectsByStatus } from '@/lib/api';
+import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -63,23 +64,17 @@ function ProjectCard({ project, children }: { project: Project; children: React.
 }
 
 function ApprovalsContent() {
-  const { user } = useAuth();
+  const router = useRouter();
   const [submitted, setSubmitted] = useState<Project[]>([]);
   const [underReview, setUnderReview] = useState<Project[]>([]);
   const [approved, setApproved] = useState<Project[]>([]);
   const [rejected, setRejected] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState<string | null>(null);
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const clearError = (projectId: string) => {
-    setErrors((prev) => { const next = { ...prev }; delete next[projectId]; return next; });
-  };
+  const [listError, setListError] = useState<string | null>(null);
 
   const fetchData = useCallback(() => {
     setLoading(true);
+    setListError(null);
     Promise.all([
       getProjectsByStatus('submitted'),
       getProjectsByStatus('under_review'),
@@ -92,61 +87,17 @@ function ApprovalsContent() {
         setApproved(app);
         setRejected(rej);
       })
-      .catch(() => {})
+      .catch(() => setListError('Failed to load projects'))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { setTimeout(fetchData, 0); }, [fetchData]);
 
-  const withErrorHandling = async (projectId: string, fn: () => Promise<void>) => {
-    if (!user) return;
-    setProcessing(projectId);
-    clearError(projectId);
-    try {
-      await fn();
-      setProcessing(null);
-      fetchData();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Action failed';
-      setErrors((prev) => ({ ...prev, [projectId]: message }));
-      setProcessing(null);
-      setRejectingId(null);
-    }
-  };
+  const onActionSuccess = useCallback(() => {
+    fetchData();
+  }, [fetchData]);
 
-  const handleStartReview = (project: Project) => {
-    withErrorHandling(project.id, async () => {
-      await updateProjectStatus(project.id, 'under_review');
-    });
-  };
-
-  const handleApprove = (project: Project) => {
-    withErrorHandling(project.id, async () => {
-      await updateProjectStatus(project.id, 'approved', user!.id);
-      const [formulas, inputs] = await Promise.all([
-        getKpiFormulas(),
-        getProjectInputs(project.id),
-      ]);
-      if (inputs && formulas.length > 0) {
-        await calculateAndStoreKpiOutputs(project.id, inputs, formulas, project);
-      }
-    });
-  };
-
-  const handleReject = (project: Project) => {
-    if (!rejectionReason.trim()) return;
-    withErrorHandling(project.id, async () => {
-      await updateProjectStatus(project.id, 'rejected', undefined, rejectionReason.trim());
-      setRejectingId(null);
-      setRejectionReason('');
-    });
-  };
-
-  const handleReturnToDraft = (project: Project) => {
-    withErrorHandling(project.id, async () => {
-      await updateProjectStatus(project.id, 'draft');
-    });
-  };
+  const actions = useReviewActions(onActionSuccess);
 
   if (loading) {
     return (
@@ -155,6 +106,9 @@ function ApprovalsContent() {
       </div>
     );
   }
+
+  const errorBanner = (msg: string | null) =>
+    msg ? <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{msg}</div> : null;
 
   const section = (title: string, projects: Project[], renderActions: (p: Project) => React.ReactNode) => (
     <div>
@@ -166,11 +120,6 @@ function ApprovalsContent() {
       )}
       {projects.map((project) => (
         <ProjectCard key={project.id} project={project}>
-          {errors[project.id] && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 mb-2">
-              {errors[project.id]}
-            </p>
-          )}
           {renderActions(project)}
         </ProjectCard>
       ))}
@@ -186,67 +135,140 @@ function ApprovalsContent() {
         </p>
       </div>
 
+      {errorBanner(listError)}
+      {errorBanner(actions.error)}
+
       {section('Review Queue', submitted, (project) => (
         <div className="flex gap-2 pt-2">
-          <Button size="sm" onClick={() => handleStartReview(project)} disabled={processing === project.id}>
-            {processing === project.id ? 'Starting...' : 'Start Review'}
+          <Button size="sm" onClick={() => actions.startReview(project).then((ok) => { if (ok) router.push(`/board2/repository/${project.id}`); })} disabled={actions.processing === project.id}>
+            {actions.processing === project.id ? 'Starting...' : 'Start Review'}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => handleReturnToDraft(project)} disabled={processing === project.id}>
-            Send Back to Draft
-          </Button>
+          {actions.returningId === project.id ? (
+            <ReturnToDraftInput
+              reason={actions.returnReason}
+              onReasonChange={actions.setReturnReason}
+              onConfirm={() => actions.returnToDraft(project)}
+              onCancel={() => { actions.setReturningId(null); actions.setReturnReason(''); }}
+              processing={actions.processing === project.id}
+            />
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => actions.setReturningId(project.id)} disabled={actions.processing === project.id}>
+              Send Back to Draft
+            </Button>
+          )}
         </div>
       ))}
 
       {section('Under Review', underReview, (project) => (
         <div className="flex gap-2 pt-2">
-          <Button size="sm" onClick={() => handleApprove(project)} disabled={processing === project.id}>
-            {processing === project.id ? 'Approving...' : 'Approve'}
+          <Button size="sm" onClick={() => actions.approve(project)} disabled={actions.processing === project.id}>
+            {actions.processing === project.id ? 'Approving...' : 'Approve'}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => { setRejectingId(project.id); setRejectionReason(''); }} disabled={processing === project.id}>
-            Reject
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => handleReturnToDraft(project)} disabled={processing === project.id}>
-            Send Back to Draft
+          {actions.rejectingId === project.id ? (
+            <RejectInput
+              reason={actions.rejectionReason}
+              onReasonChange={actions.setRejectionReason}
+              onConfirm={() => actions.reject(project)}
+              onCancel={() => { actions.setRejectingId(null); actions.setRejectionReason(''); }}
+              processing={actions.processing === project.id}
+            />
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => { actions.setRejectingId(project.id); actions.setRejectionReason(''); }} disabled={actions.processing === project.id}>
+              Reject
+            </Button>
+          )}
+          {actions.returningId === project.id ? (
+            <ReturnToDraftInput
+              reason={actions.returnReason}
+              onReasonChange={actions.setReturnReason}
+              onConfirm={() => actions.returnToDraft(project)}
+              onCancel={() => { actions.setReturningId(null); actions.setReturnReason(''); }}
+              processing={actions.processing === project.id}
+            />
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => actions.setReturningId(project.id)} disabled={actions.processing === project.id}>
+              Send Back to Draft
+            </Button>
+          )}
+          <Button size="sm" variant="link" onClick={() => router.push(`/board2/repository/${project.id}`)}>
+            View Details
           </Button>
         </div>
       ))}
 
-      {rejectingId && (
-        <div className="max-w-xl mx-auto space-y-2 border border-red-200 rounded-lg p-4 bg-red-50 -mt-4 mb-4">
-          <p className="text-sm font-medium text-red-700">Rejection reason for this project:</p>
-          <Input
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
-            placeholder="Explain why this project is being rejected..."
-            className="h-8 text-sm"
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <Button size="sm" variant="destructive" onClick={() => handleReject(underReview.find(p => p.id === rejectingId) ?? submitted.find(p => p.id === rejectingId)!)} disabled={processing === rejectingId || !rejectionReason.trim()}>
-              {processing === rejectingId ? 'Rejecting...' : 'Confirm Reject'}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => { setRejectingId(null); setRejectionReason(''); }} disabled={processing === rejectingId}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-
       {section('Approved Projects', approved, (project) => (
         <div className="flex gap-2 pt-2">
-          <Button size="sm" variant="outline" onClick={() => handleReturnToDraft(project)} disabled={processing === project.id}>
-            {processing === project.id ? 'Reverting...' : 'Revert to Draft'}
-          </Button>
+          {actions.returningId === project.id ? (
+            <ReturnToDraftInput
+              reason={actions.returnReason}
+              onReasonChange={actions.setReturnReason}
+              onConfirm={() => actions.returnToDraft(project)}
+              onCancel={() => { actions.setReturningId(null); actions.setReturnReason(''); }}
+              processing={actions.processing === project.id}
+            />
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => actions.setReturningId(project.id)} disabled={actions.processing === project.id}>
+              {actions.processing === project.id ? 'Reverting...' : 'Revert to Draft'}
+            </Button>
+          )}
         </div>
       ))}
 
       {section('Rejected Projects', rejected, (project) => (
         <div className="flex gap-2 pt-2">
-          <Button size="sm" variant="outline" onClick={() => handleReturnToDraft(project)} disabled={processing === project.id}>
-            Send Back to Draft
-          </Button>
+          {actions.returningId === project.id ? (
+            <ReturnToDraftInput
+              reason={actions.returnReason}
+              onReasonChange={actions.setReturnReason}
+              onConfirm={() => actions.returnToDraft(project)}
+              onCancel={() => { actions.setReturningId(null); actions.setReturnReason(''); }}
+              processing={actions.processing === project.id}
+            />
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => actions.setReturningId(project.id)} disabled={actions.processing === project.id}>
+              Send Back to Draft
+            </Button>
+          )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function RejectInput({
+  reason, onReasonChange, onConfirm, onCancel, processing,
+}: {
+  reason: string; onReasonChange: (v: string) => void; onConfirm: () => void; onCancel: () => void; processing: boolean;
+}) {
+  return (
+    <div className="space-y-2 pt-2 border-t w-full">
+      <p className="text-xs font-medium text-red-600">Rejection reason:</p>
+      <Input value={reason} onChange={(e) => onReasonChange(e.target.value)} placeholder="Explain why this project is being rejected..." className="h-8 text-sm" autoFocus />
+      <div className="flex gap-2">
+        <Button size="sm" variant="destructive" onClick={onConfirm} disabled={processing || !reason.trim()}>
+          {processing ? 'Rejecting...' : 'Confirm Reject'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onCancel} disabled={processing}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function ReturnToDraftInput({
+  reason, onReasonChange, onConfirm, onCancel, processing,
+}: {
+  reason: string; onReasonChange: (v: string) => void; onConfirm: () => void; onCancel: () => void; processing: boolean;
+}) {
+  return (
+    <div className="space-y-2 pt-2 border-t w-full">
+      <p className="text-xs font-medium text-muted-foreground">Reason for returning (visible to contributor):</p>
+      <Input value={reason} onChange={(e) => onReasonChange(e.target.value)} placeholder="What needs to be fixed?" className="h-8 text-sm" autoFocus />
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={onConfirm} disabled={processing}>
+          {processing ? 'Sending...' : 'Confirm Send to Draft'}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={processing}>Cancel</Button>
+      </div>
     </div>
   );
 }

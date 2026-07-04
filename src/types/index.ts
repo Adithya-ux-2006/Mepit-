@@ -80,6 +80,9 @@ export interface KpiFormula {
   description: string;
   is_active: boolean;
   created_at: string;
+  min_benchmark: number | null;
+  max_benchmark: number | null;
+  benchmark_note: string | null;
 }
 
 export interface ProjectKpiOutput {

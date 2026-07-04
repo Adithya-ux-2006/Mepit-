@@ -88,31 +88,45 @@ export async function PATCH(
   if (nextStatus === 'approved') {
     update.approved_at = new Date().toISOString();
     update.approved_by = actorId;
-    update.rejection_reason = null;
   }
 
   if (nextStatus === 'rejected') {
-    update.rejection_reason = rejection_reason ?? null;
     update.approved_at = null;
     update.approved_by = null;
   }
 
-  // Keep rejection_reason until approved; it stays visible to the contributor during rework
+  if (nextStatus === 'draft' && rejection_reason) {
+    // Send-back-to-draft with a reason stored in rejection_reason
+    update.rejection_reason = rejection_reason;
+  }
 
-  const { error: dbError } = await admin
-    .from('projects')
-    .update(update)
-    .eq('id', id);
+  if (nextStatus === 'rejected' && rejection_reason) {
+    update.rejection_reason = rejection_reason;
+  }
+
+  // Try the update; if the rejection_reason column doesn't exist yet,
+  // remove it from the payload and retry
+  const tryUpdate = (payload: Record<string, unknown>) =>
+    admin.from('projects').update(payload).eq('id', id);
+
+  let { error: dbError } = await tryUpdate(update);
+
+  if (dbError && dbError.message.includes('rejection_reason') && dbError.message.includes('column')) {
+    const fallback = { ...update };
+    delete fallback.rejection_reason;
+    dbError = (await tryUpdate(fallback)).error;
+  }
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
 
   // Audit log
+  const auditAction = nextStatus === 'under_review' ? 'review_started' : nextStatus;
   const { error: auditError } = await admin
     .from('audit_log')
     .insert({
       entity_type: 'project',
       entity_id: id,
-      action: nextStatus,
+      action: auditAction,
       performed_by: actorId,
       metadata: { previous_status: currentStatus },
     });
