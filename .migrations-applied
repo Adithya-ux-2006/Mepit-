@@ -5,3 +5,5 @@
 003_grune_validation_rules.sql
 004_lock_down_rls.sql
 005_enforce_rls.sql
+006_add_rejection_reason.sql
+007_add_kpi_benchmarks.sql
