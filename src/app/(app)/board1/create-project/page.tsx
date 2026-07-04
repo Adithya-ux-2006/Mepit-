@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { createProject, upsertProjectInputs, updateProjectStatus, createAuditLog, validateProjectInputs, getProjectById, updateProject, type ValidationError } from '@/lib/api';
@@ -195,7 +195,7 @@ function SelectField({
   );
 }
 
-export default function CreateProjectPage() {
+function CreateProjectForm() {
   const router = useRouter();
   const { user } = useAuth();
   const [form, setForm] = useState<FormState>(defaultForm);
@@ -616,5 +616,13 @@ export default function CreateProjectPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function CreateProjectPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><p className="text-sm text-muted-foreground">Loading...</p></div>}>
+      <CreateProjectForm />
+    </Suspense>
   );
 }
