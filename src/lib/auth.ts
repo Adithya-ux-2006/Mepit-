@@ -1,13 +1,5 @@
-/**
- * Server-side Authentication Helper — Grüne Platform
- *
- * Verifies Firebase ID tokens from the __session cookie and resolves
- * the user's role from the Supabase users table. Used by all API routes.
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { verifyIdToken } from '@/lib/firebase-admin';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 
 export interface AuthUser {
@@ -17,9 +9,6 @@ export interface AuthUser {
   dbUserId: string;
 }
 
-/**
- * Verify the session cookie and return the authenticated user, or null.
- */
 export async function getAuthUser(request?: NextRequest): Promise<AuthUser | null> {
   try {
     const cookieStore = await cookies();
@@ -29,24 +18,35 @@ export async function getAuthUser(request?: NextRequest): Promise<AuthUser | nul
 
     if (!sessionCookie) return null;
 
-    const decoded = await verifyIdToken(sessionCookie);
-    if (!decoded || !decoded.email) return null;
-
-    // Look up the user in our database to get their role
     const admin = getSupabaseAdmin();
-    const { data: user, error } = await admin
+    const { data: { user: supabaseUser }, error: verifyError } = await admin.auth.getUser(sessionCookie);
+    if (verifyError || !supabaseUser || !supabaseUser.email) return null;
+
+    const { data: existingUser, error: dbError } = await admin
       .from('users')
       .select('id, role')
-      .eq('email', decoded.email)
-      .single();
+      .eq('email', supabaseUser.email)
+      .maybeSingle();
 
-    if (error || !user) return null;
+    if (dbError) return null;
+
+    let dbUser = existingUser;
+    if (!dbUser) {
+      const { data: newUser, error: createError } = await admin
+        .from('users')
+        .insert({ email: supabaseUser.email, name: '', role: 'contributor' })
+        .select('id, role')
+        .single();
+
+      if (createError || !newUser) return null;
+      dbUser = newUser;
+    }
 
     return {
-      uid: decoded.uid,
-      email: decoded.email,
-      role: user.role,
-      dbUserId: user.id,
+      uid: supabaseUser.id,
+      email: supabaseUser.email,
+      role: dbUser.role as 'contributor' | 'admin',
+      dbUserId: dbUser.id,
     };
   } catch {
     return null;

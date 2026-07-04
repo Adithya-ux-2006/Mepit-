@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const body = await request.json();
@@ -36,3 +36,4 @@ export async function POST(request: NextRequest) {
   }
   return NextResponse.json(map);
 }
+

@@ -13,26 +13,14 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = getSupabaseAdmin();
-
-  // Fetch full user record
   const { data: user, error } = await admin
     .from('users')
     .select('*')
-    .eq('email', authUser.email)
+    .eq('id', authUser.dbUserId)
     .single();
 
   if (error || !user) {
-    // User doesn't exist yet — create them (first login after session cookie was set)
-    const { data: newUser, error: createError } = await admin
-      .from('users')
-      .insert({ email: authUser.email, name: '', role: 'contributor' })
-      .select()
-      .single();
-
-    if (createError) {
-      return NextResponse.json({ error: createError.message }, { status: 500 });
-    }
-    return NextResponse.json(newUser);
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
   return NextResponse.json(user);

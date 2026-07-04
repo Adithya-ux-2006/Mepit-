@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { validateInput, createAuditLogSchema } from '@/lib/validations';
 
 export async function GET(request: NextRequest) {
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const { searchParams } = request.nextUrl;
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const body = await request.json();

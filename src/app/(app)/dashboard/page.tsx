@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { getProjects, getKpiFormulas, getAuditLogs, getRateLimitStatus } from '@/lib/api';
@@ -21,22 +21,24 @@ export default function DashboardPage() {
   useEffect(() => {
     Promise.all([getProjects(), getKpiFormulas(), getAuditLogs()])
       .then(([p, f, logs]) => {
-        setProjects(p);
-        setFormulaCount(f.length);
-        setRecentActivity(logs.slice(0, 10));
+        startTransition(() => {
+          setProjects(p);
+          setFormulaCount(f.length);
+          setRecentActivity(logs.slice(0, 10));
+        });
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => startTransition(() => setLoading(false)));
   }, []);
 
   // Fetch rate limit status for admins
   useEffect(() => {
     if (user?.role === 'admin') {
-      setRlLoading(true);
+      startTransition(() => setRlLoading(true));
       getRateLimitStatus()
-        .then(setRateLimitData)
-        .catch(() => setRateLimitData(null))
-        .finally(() => setRlLoading(false));
+        .then((data) => startTransition(() => setRateLimitData(data)))
+        .catch(() => startTransition(() => setRateLimitData(null)))
+        .finally(() => startTransition(() => setRlLoading(false)));
     }
   }, [user?.role]);
 

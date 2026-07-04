@@ -2,11 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-} from 'firebase/auth';
-import { auth, isConfigured } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,30 +20,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      if (!auth || !isConfigured) {
-        throw new Error('Firebase is not configured');
-      }
+      const endpoint = mode === 'login' ? '/api/auth/session' : '/api/auth/session?signup=1';
 
-      if (mode === 'login') {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-      }
-
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) {
-        throw new Error('Failed to obtain authentication token. Please try again.');
-      }
-
-      const sessionRes = await fetch('/api/auth/session', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
+        body: JSON.stringify({ email, password }),
       });
 
-      if (!sessionRes.ok) {
-        const body = await sessionRes.json().catch(() => ({ error: null }));
-        const msg = body?.error || `Server error (HTTP ${sessionRes.status}). Please try again or contact support.`;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: null }));
+        const msg = body?.error || `Server error (HTTP ${res.status}).`;
         throw new Error(msg);
       }
 

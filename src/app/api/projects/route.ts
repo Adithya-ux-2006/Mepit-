@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const blocked = rateLimitResponse(request, rateLimits.read);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const admin = getSupabaseAdmin();
@@ -50,3 +50,4 @@ export async function POST(request: NextRequest) {
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
   return NextResponse.json(data, { status: 201 });
 }
+

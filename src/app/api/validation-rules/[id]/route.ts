@@ -10,7 +10,7 @@ export async function PATCH(
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAdmin(request);
+  const [, error] = await requireAdmin(request);
   if (error) return error;
 
   const { id } = await params;
@@ -35,7 +35,7 @@ export async function DELETE(
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAdmin(request);
+  const [, error] = await requireAdmin(request);
   if (error) return error;
 
   const { id } = await params;

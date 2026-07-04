@@ -13,9 +13,10 @@ import { getRateLimitStatus } from '@/lib/rate-limit';
  * instance. With Upstash Redis, it would show global state.
  */
 export async function GET(request: NextRequest) {
-  const [user, error] = await requireAdmin(request);
+  const [, error] = await requireAdmin(request);
   if (error) return error;
 
   const status = getRateLimitStatus(20);
   return NextResponse.json(status);
 }
+

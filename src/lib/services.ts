@@ -593,11 +593,12 @@ export async function validateProjectInputs(
             (acc: number, f: string) => acc + ((formData[f] as number) ?? 0),
             0
           );
+          const tolerancePct = typeof expr.tolerance_pct === 'number' ? expr.tolerance_pct : 0.01;
           if (
             typeof fieldValue === 'number' &&
             fieldValue > 0 &&
             sum > 0 &&
-            Math.abs(fieldValue - sum) > Math.max(fieldValue * 0.01, 1)
+            Math.abs(fieldValue - sum) > Math.max(fieldValue * tolerancePct, 1)
           ) {
             errors.push({
               field: rule.field_name,

@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+nul # Windows reserved device name — causes Turbopack CSS build errors if present
 
 # debug
 npm-debug.log*

@@ -12,7 +12,7 @@ export async function GET(
   const blocked = rateLimitResponse(request, rateLimits.read);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const { id } = await params;
@@ -33,7 +33,7 @@ export async function POST(
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const { id } = await params;
@@ -103,7 +103,7 @@ export async function DELETE(
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const { id } = await params;

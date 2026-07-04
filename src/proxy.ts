@@ -1,12 +1,3 @@
-/**
- * Next.js Middleware — Grüne Platform
- *
- * Gates all protected pages by checking the __session cookie.
- * Decodes the JWT payload to check expiry without full cryptographic
- * verification (fast, edge-compatible). Full verification happens in
- * API routes via the auth helper.
- */
-
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
@@ -28,15 +19,13 @@ function decodeJwtPayload(token: string): { exp?: number } | null {
   }
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths through
   if (publicPaths.includes(pathname)) {
     return NextResponse.next();
   }
 
-  // Allow static assets and internal Next.js paths
   if (pathname.startsWith('/_next') || pathname.startsWith('/favicon')) {
     return NextResponse.next();
   }
@@ -45,18 +34,14 @@ export function middleware(request: NextRequest) {
 
   if (!sessionCookie) {
     const loginUrl = new URL('/login', request.url);
-    // Only pass safe relative paths as redirect targets
     if (pathname.startsWith('/') && !pathname.startsWith('//')) {
       loginUrl.searchParams.set('redirect', pathname);
     }
     return NextResponse.redirect(loginUrl);
   }
 
-  // Decode JWT to check expiry (fast, no crypto verification needed for middleware).
-  // Full token verification happens in API routes via firebase-admin.
   const payload = decodeJwtPayload(sessionCookie);
   if (payload?.exp && payload.exp * 1000 < Date.now()) {
-    // Token expired — clear the stale cookie and redirect to login
     const loginUrl = new URL('/login', request.url);
     if (pathname.startsWith('/') && !pathname.startsWith('//')) {
       loginUrl.searchParams.set('redirect', pathname);

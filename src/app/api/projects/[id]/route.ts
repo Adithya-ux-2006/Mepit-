@@ -10,7 +10,7 @@ export async function GET(
   const blocked = rateLimitResponse(request, rateLimits.read);
   if (blocked) return blocked;
 
-  const [user, error] = await requireAuth(request);
+  const [, error] = await requireAuth(request);
   if (error) return error;
 
   const { id } = await params;

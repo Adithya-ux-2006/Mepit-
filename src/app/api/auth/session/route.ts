@@ -1,45 +1,71 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { verifyIdToken } from '@/lib/firebase-admin';
+import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
-    // Rate limit: 5 attempts per minute per IP — brute-force protection
     const blocked = rateLimitResponse(request, rateLimits.auth);
     if (blocked) return blocked;
 
-    let idToken: string | undefined;
+    let email: string | undefined;
+    let password: string | undefined;
+    const isSignUp = new URL(request.url).searchParams.get('signup') === '1';
     try {
       const body = await request.json();
-      idToken = body?.idToken;
+      email = body?.email;
+      password = body?.password;
     } catch {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    if (!idToken) {
-      return NextResponse.json({ error: 'Missing idToken' }, { status: 400 });
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Verify the Firebase ID token server-side before accepting it
-    const decoded = await verifyIdToken(idToken);
+    const supabase = getSupabaseAdmin();
 
-    if (!decoded) {
-      return NextResponse.json({
-        error: 'Token verification failed — check that FIREBASE_SERVICE_ACCOUNT_KEY is configured on the server',
-      }, { status: 401 });
+    let sessionToken: string | undefined;
+    let userId: string | undefined;
+
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      if (!data.session) {
+        return NextResponse.json({
+          error: 'Account created. Please check your email for a confirmation link before signing in.',
+        }, { status: 200 });
+      }
+      sessionToken = data.session.access_token;
+      userId = data.user?.id;
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        const message = error.message === 'Invalid login credentials'
+          ? 'Invalid email or password.'
+          : error.message;
+        return NextResponse.json({ error: message }, { status: 401 });
+      }
+      sessionToken = data.session.access_token;
+      userId = data.user?.id;
+    }
+
+    if (!sessionToken) {
+      return NextResponse.json({ error: 'Failed to obtain session token' }, { status: 500 });
     }
 
     const cookieStore = await cookies();
-    cookieStore.set('__session', idToken, {
+    cookieStore.set('__session', sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60, // 1 hour — matches Firebase ID token lifetime. Middleware checks expiry on every page load.
+      maxAge: 60 * 60,
     });
 
-    return NextResponse.json({ success: true, uid: decoded.uid });
+    return NextResponse.json({ success: true, uid: userId });
   } catch (err) {
     console.error('Session POST unhandled error:', err);
     return NextResponse.json({ error: 'Internal server error during session creation' }, { status: 500 });
@@ -47,7 +73,6 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  // Rate limit: 10 per minute per IP — prevent logout flood
   const blocked = rateLimitResponse(request, rateLimits.logout);
   if (blocked) return blocked;
 
