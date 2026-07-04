@@ -48,7 +48,8 @@ export async function getAuthUser(request?: NextRequest): Promise<AuthUser | nul
       role: dbUser.role as 'contributor' | 'admin',
       dbUserId: dbUser.id,
     };
-  } catch {
+  } catch (e) {
+    console.error('getAuthUser unhandled error:', e);
     return null;
   }
 }
