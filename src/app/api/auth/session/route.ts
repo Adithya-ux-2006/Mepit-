@@ -1,63 +1,6 @@
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
-
-function serializeCookie(name: string, value: string, opts: { httpOnly?: boolean; secure?: boolean; sameSite?: 'lax' | 'strict' | 'none'; path?: string; maxAge?: number }): string {
-  let cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
-  if (opts.httpOnly) cookie += '; HttpOnly';
-  if (opts.secure) cookie += '; Secure';
-  if (opts.sameSite) cookie += `; SameSite=${opts.sameSite}`;
-  if (opts.path) cookie += `; Path=${opts.path}`;
-  if (typeof opts.maxAge === 'number') cookie += `; Max-Age=${opts.maxAge}`;
-  return cookie;
-}
-
-function setSessionCookies(headers: Headers, accessToken: string, refreshToken?: string | undefined): void {
-  const secure = process.env.NODE_ENV === 'production';
-  headers.append('Set-Cookie', serializeCookie('__session', accessToken, {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60,
-  }));
-  if (refreshToken) {
-    headers.append('Set-Cookie', serializeCookie('__refresh', refreshToken, {
-      httpOnly: true,
-      secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
-    }));
-  }
-  // Delete the old-scoped __refresh cookie if it exists
-  headers.append('Set-Cookie', serializeCookie('__refresh', '', {
-    path: '/api/auth',
-    maxAge: 0,
-  }));
-}
-
-function clearSessionCookies(headers: Headers): void {
-  const secure = process.env.NODE_ENV === 'production';
-  headers.append('Set-Cookie', serializeCookie('__session', '', {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  }));
-  headers.append('Set-Cookie', serializeCookie('__refresh', '', {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  }));
-  headers.append('Set-Cookie', serializeCookie('__refresh', '', {
-    path: '/api/auth',
-    maxAge: 0,
-  }));
-}
 
 export async function POST(request: Request) {
   try {
@@ -79,11 +22,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const isProd = process.env.NODE_ENV === 'production';
 
-    let sessionToken: string | undefined;
-    let refreshToken: string | undefined;
-    let userId: string | undefined;
+    const collectedCookies: { name: string; value: string; options?: Record<string, unknown> }[] = [];
+
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll() {
+          const cookieHeader = request.headers.get('cookie') || '';
+          if (!cookieHeader) return [];
+          return cookieHeader.split(';').map(c => c.trim()).filter(Boolean).map(c => {
+            const eq = c.indexOf('=');
+            if (eq === -1) return { name: c, value: '' };
+            return { name: decodeURIComponent(c.slice(0, eq)).trim(), value: decodeURIComponent(c.slice(eq + 1)) };
+          });
+        },
+        setAll(cookiesToSet) {
+          collectedCookies.push(...cookiesToSet);
+        },
+      },
+      cookieOptions: {
+        name: '__session',
+        maxAge: 60 * 60,
+        sameSite: 'lax' as const,
+        path: '/',
+        httpOnly: true,
+        secure: isProd,
+      },
+    });
 
     if (isSignUp) {
       const { data, error } = await supabase.auth.signUp({ email, password });
@@ -95,33 +63,47 @@ export async function POST(request: Request) {
           error: 'Account created. Please check your email for a confirmation link before signing in.',
         }, { status: 200 });
       }
-      sessionToken = data.session.access_token;
-      refreshToken = data.session.refresh_token;
-      userId = data.user?.id;
     } else {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         const message = error.message === 'Invalid login credentials'
           ? 'Invalid email or password.'
           : error.message;
         return NextResponse.json({ error: message }, { status: 401 });
       }
-      sessionToken = data.session.access_token;
-      refreshToken = data.session.refresh_token;
-      userId = data.user?.id;
     }
 
-    if (!sessionToken) {
-      return NextResponse.json({ error: 'Failed to obtain session token' }, { status: 500 });
+    const response = NextResponse.json({ success: true });
+    for (const { name, value, options } of collectedCookies) {
+      if (name === '__session') {
+        const isDelete = !value || (options as Record<string, unknown>)?.maxAge === 0;
+        if (isDelete) {
+          response.cookies.set('__session', '', { path: '/', maxAge: 0 });
+          response.cookies.set('__refresh', '', { path: '/', maxAge: 0 });
+        } else {
+          try {
+            const session = JSON.parse(value);
+            if (session.access_token) {
+              response.cookies.set('__session', session.access_token, {
+                httpOnly: true, secure: isProd, sameSite: 'lax', path: '/',
+                maxAge: 60 * 60,
+              });
+            }
+            if (session.refresh_token) {
+              response.cookies.set('__refresh', session.refresh_token, {
+                httpOnly: true, secure: isProd, sameSite: 'lax', path: '/',
+                maxAge: 60 * 60 * 24 * 30,
+              });
+            }
+          } catch {
+            response.cookies.set(name, value, options);
+          }
+        }
+      } else {
+        response.cookies.set(name, value, options);
+      }
     }
-
-    const headers = new Headers({ 'Content-Type': 'application/json' });
-    setSessionCookies(headers, sessionToken, refreshToken);
-
-    return new Response(JSON.stringify({ success: true, uid: userId }), {
-      status: 200,
-      headers,
-    });
+    return response;
   } catch (err) {
     console.error('Session POST unhandled error:', err);
     return NextResponse.json({ error: 'Internal server error during session creation' }, { status: 500 });
@@ -132,11 +114,8 @@ export async function DELETE(request: Request) {
   const blocked = rateLimitResponse(request, rateLimits.logout);
   if (blocked) return blocked;
 
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  clearSessionCookies(headers);
-
-  return new Response(JSON.stringify({ success: true }), {
-    status: 200,
-    headers,
-  });
+  const response = NextResponse.json({ success: true });
+  response.cookies.set('__session', '', { path: '/', maxAge: 0 });
+  response.cookies.set('__refresh', '', { path: '/', maxAge: 0 });
+  return response;
 }

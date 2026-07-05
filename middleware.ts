@@ -1,6 +1,15 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64));
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -23,11 +32,23 @@ export async function middleware(request: NextRequest) {
         const cookies = request.cookies.getAll();
         const accessToken = cookies.find((c) => c.name === '__session')?.value;
         const refreshToken = cookies.find((c) => c.name === '__refresh')?.value;
+
+        let expiresAt: number | undefined;
+        if (accessToken) {
+          const payload = decodeJwtPayload(accessToken);
+          if (payload) {
+            expiresAt = payload.exp as number | undefined;
+          }
+        }
+
         return [
           {
             name: '__session',
             value: JSON.stringify({
               access_token: accessToken ?? '',
+              token_type: 'bearer',
+              expires_in: 3600,
+              expires_at: expiresAt,
               refresh_token: refreshToken ?? '',
             }),
           },
@@ -37,7 +58,7 @@ export async function middleware(request: NextRequest) {
       setAll(cookiesToSet) {
         for (const { name, value, options } of cookiesToSet) {
           if (name === '__session') {
-            const isDelete = !value || options?.maxAge === 0;
+            const isDelete = !value || (options as Record<string, unknown>)?.maxAge === 0;
             if (isDelete) {
               response.cookies.set('__session', '', { path: '/', maxAge: 0 });
               response.cookies.set('__refresh', '', { path: '/', maxAge: 0 });
@@ -57,7 +78,7 @@ export async function middleware(request: NextRequest) {
                   });
                 }
               } catch {
-                response.cookies.set('__session', value, options);
+                response.cookies.set(name, value, options);
               }
             }
           } else {
@@ -77,6 +98,13 @@ export async function middleware(request: NextRequest) {
   });
 
   const { data: { session } } = await supabase.auth.getSession();
+
+  console.log('[middleware] pathname=%s hasSession=%s accessTokenLength=%d expiresAt=%s',
+    pathname,
+    !!session,
+    request.cookies.get('__session')?.value?.length ?? 0,
+    session?.expires_at ?? 'N/A'
+  );
 
   if (!session) {
     if (isApiRoute) {
