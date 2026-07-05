@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdmin();
 
     let sessionToken: string | undefined;
+    let refreshToken: string | undefined;
     let userId: string | undefined;
 
     if (isSignUp) {
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
         }, { status: 200 });
       }
       sessionToken = data.session.access_token;
+      refreshToken = data.session.refresh_token;
       userId = data.user?.id;
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -49,6 +51,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: message }, { status: 401 });
       }
       sessionToken = data.session.access_token;
+      refreshToken = data.session.refresh_token;
       userId = data.user?.id;
     }
 
@@ -65,6 +68,16 @@ export async function POST(request: Request) {
       maxAge: 60 * 60,
     });
 
+    if (refreshToken) {
+      cookieStore.set('__refresh', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/api/auth',
+        maxAge: 60 * 60 * 24 * 30,
+      });
+    }
+
     return NextResponse.json({ success: true, uid: userId });
   } catch (err) {
     console.error('Session POST unhandled error:', err);
@@ -78,5 +91,6 @@ export async function DELETE(request: Request) {
 
   const cookieStore = await cookies();
   cookieStore.delete('__session');
+  cookieStore.delete('__refresh');
   return NextResponse.json({ success: true });
 }

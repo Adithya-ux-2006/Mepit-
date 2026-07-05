@@ -12,6 +12,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
+  const redirectTo = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('redirect') || '/dashboard'
+    : '/dashboard';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -32,7 +36,7 @@ export default function LoginPage() {
         throw new Error(msg);
       }
 
-      window.location.href = '/dashboard';
+      window.location.href = redirectTo;
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Authentication failed';

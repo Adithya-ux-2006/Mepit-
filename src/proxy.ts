@@ -41,13 +41,27 @@ export function proxy(request: NextRequest) {
   }
 
   const payload = decodeJwtPayload(sessionCookie);
-  if (payload?.exp && payload.exp * 1000 < Date.now()) {
+
+  // If JWT can't be decoded, delete the bad cookie and redirect
+  if (!payload) {
     const loginUrl = new URL('/login', request.url);
     if (pathname.startsWith('/') && !pathname.startsWith('//')) {
       loginUrl.searchParams.set('redirect', pathname);
     }
     const response = NextResponse.redirect(loginUrl);
     response.cookies.delete('__session');
+    response.cookies.delete('__refresh');
+    return response;
+  }
+
+  if (payload.exp && payload.exp * 1000 < Date.now()) {
+    const loginUrl = new URL('/login', request.url);
+    if (pathname.startsWith('/') && !pathname.startsWith('//')) {
+      loginUrl.searchParams.set('redirect', pathname);
+    }
+    const response = NextResponse.redirect(loginUrl);
+    response.cookies.delete('__session');
+    response.cookies.delete('__refresh');
     return response;
   }
 
@@ -56,6 +70,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/public).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$).*)',
   ],
 };
