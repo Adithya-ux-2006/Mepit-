@@ -1,9 +1,50 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 
-export async function POST(request: NextRequest) {
+function serializeCookie(name: string, value: string, opts: { httpOnly?: boolean; secure?: boolean; sameSite?: 'lax' | 'strict' | 'none'; path?: string; maxAge?: number }): string {
+  let cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
+  if (opts.httpOnly) cookie += '; HttpOnly';
+  if (opts.secure) cookie += '; Secure';
+  if (opts.sameSite) cookie += `; SameSite=${opts.sameSite}`;
+  if (opts.path) cookie += `; Path=${opts.path}`;
+  if (typeof opts.maxAge === 'number') cookie += `; Max-Age=${opts.maxAge}`;
+  return cookie;
+}
+
+function setSessionCookies(headers: Headers, accessToken: string, refreshToken?: string | undefined): void {
+  const secure = process.env.NODE_ENV === 'production';
+  headers.append('Set-Cookie', serializeCookie('__session', accessToken, {
+    httpOnly: true,
+    secure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60,
+  }));
+  if (refreshToken) {
+    headers.append('Set-Cookie', serializeCookie('__refresh', refreshToken, {
+      httpOnly: true,
+      secure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    }));
+  }
+  headers.append('Set-Cookie', serializeCookie('__refresh', '', {
+    path: '/api/auth',
+    maxAge: 0,
+  }));
+}
+
+export async function POST(request: Request) {
   try {
-    const refreshToken = request.cookies.get('__refresh')?.value;
+    const cookieHeader = request.headers.get('cookie') || '';
+    const cookies = Object.fromEntries(
+      cookieHeader.split(';').map(c => c.trim()).filter(Boolean).map(c => {
+        const eq = c.indexOf('=');
+        return eq === -1 ? [c, ''] : [decodeURIComponent(c.slice(0, eq)).trim(), decodeURIComponent(c.slice(eq + 1))];
+      })
+    );
+    const refreshToken = cookies['__refresh'];
 
     if (!refreshToken) {
       return NextResponse.json({ error: 'No refresh token' }, { status: 401 });
@@ -13,38 +54,20 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
 
     if (error || !data.session) {
-      const failResponse = NextResponse.json({ error: 'Session expired' }, { status: 401 });
-      failResponse.cookies.delete('__session');
-      failResponse.cookies.delete('__refresh');
-      return failResponse;
+      const failHeaders = new Headers({ 'Content-Type': 'application/json' });
+      failHeaders.append('Set-Cookie', serializeCookie('__session', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 }));
+      failHeaders.append('Set-Cookie', serializeCookie('__refresh', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 }));
+      failHeaders.append('Set-Cookie', serializeCookie('__refresh', '', { path: '/api/auth', maxAge: 0 }));
+      return new Response(JSON.stringify({ error: 'Session expired' }), { status: 401, headers: failHeaders });
     }
 
-    const response = NextResponse.json({
-      success: true,
-      uid: data.user?.id,
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    setSessionCookies(headers, data.session.access_token, data.session.refresh_token);
+
+    return new Response(JSON.stringify({ success: true, uid: data.user?.id }), {
+      status: 200,
+      headers,
     });
-
-    response.cookies.set('__session', data.session.access_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60,
-    });
-
-    if (data.session.refresh_token) {
-      response.cookies.set('__refresh', data.session.refresh_token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 30,
-      });
-    } else {
-      response.cookies.set('__refresh', '', { path: '/api/auth', maxAge: 0 });
-    }
-
-    return response;
   } catch (err) {
     console.error('Session refresh unhandled error:', err);
     return NextResponse.json({ error: 'Internal server error during session refresh' }, { status: 500 });

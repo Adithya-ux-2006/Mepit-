@@ -36,6 +36,7 @@ export default function LoginPage() {
         throw new Error(msg);
       }
 
+      await new Promise((r) => setTimeout(r, 150));
       window.location.href = redirectTo;
     } catch (err: unknown) {
       const message =
