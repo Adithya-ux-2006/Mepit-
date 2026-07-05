@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, deleteProjectKpiOutputs, previewKpiOutputs, getValidationRules } from '@/lib/api';
@@ -93,7 +93,7 @@ export default function ProjectDetailPage() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const { user } = useAuth();
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     if (!id) return;
     setLoading(true);
     Promise.all([
@@ -168,14 +168,14 @@ export default function ProjectDetailPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  };
+  }, [id]);
 
   const actions = useReviewActions(() => {
     setReviewError(null);
     loadData();
   });
 
-  useEffect(() => { setTimeout(loadData, 0); }, [id]);
+  useEffect(() => { setTimeout(loadData, 0); }, [loadData]);
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">

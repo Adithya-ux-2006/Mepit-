@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,10 +52,12 @@ export default function LoginPage() {
     <div className="flex flex-1 items-center justify-center min-h-screen bg-background">
       <div className="w-full max-w-sm mx-auto px-6">
         <div className="mb-8 text-center">
-          <img
+          <Image
             src="/grune-logo.png"
             alt="Grüne Designs"
-            className="mx-auto h-16 w-auto mb-4 object-contain"
+            width={64}
+            height={64}
+            className="mx-auto h-auto mb-4 object-contain"
           />
           <h1 className="text-xl font-semibold text-foreground tracking-tight">
             Grüne Platform

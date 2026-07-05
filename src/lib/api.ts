@@ -129,7 +129,6 @@ export async function createProject(
     saleable_area: number;
     leasable_area: number;
   },
-  _userId: string, // kept for signature compatibility; server derives from session
 ): Promise<Project> {
   return apiFetch<Project>('/api/projects', {
     method: 'POST',

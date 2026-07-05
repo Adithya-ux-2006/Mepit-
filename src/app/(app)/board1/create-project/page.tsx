@@ -346,7 +346,7 @@ function CreateProjectForm() {
     try {
       const project = existingProjectId
         ? await updateProject(existingProjectId, projectData)
-        : await createProject(projectData, user.id);
+        : await createProject(projectData);
 
       const projectId = project.id;
 

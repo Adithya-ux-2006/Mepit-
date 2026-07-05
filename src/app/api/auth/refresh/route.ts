@@ -29,21 +29,17 @@ function setSessionCookies(headers: Headers, accessToken: string, refreshToken?:
       maxAge: 60 * 60 * 24 * 30,
     }));
   }
-  headers.append('Set-Cookie', serializeCookie('__refresh', '', {
-    path: '/api/auth',
-    maxAge: 0,
-  }));
 }
 
 export async function POST(request: Request) {
   try {
     const cookieHeader = request.headers.get('cookie') || '';
-    const cookies = Object.fromEntries(
-      cookieHeader.split(';').map(c => c.trim()).filter(Boolean).map(c => {
-        const eq = c.indexOf('=');
-        return eq === -1 ? [c, ''] : [decodeURIComponent(c.slice(0, eq)).trim(), decodeURIComponent(c.slice(eq + 1))];
-      })
-    );
+    const parsed = cookieHeader.split(';').map(c => c.trim()).filter(Boolean).map(c => {
+      const eq = c.indexOf('=');
+      return eq === -1 ? [c, ''] : [decodeURIComponent(c.slice(0, eq)).trim(), decodeURIComponent(c.slice(eq + 1))];
+    });
+    // Reverse so last occurrence of a duplicate name wins (handles old path=/api auth + new path=/ coexistence)
+    const cookies = Object.fromEntries(parsed.reverse());
     const refreshToken = cookies['__refresh'];
 
     if (!refreshToken) {
@@ -57,7 +53,6 @@ export async function POST(request: Request) {
       const failHeaders = new Headers({ 'Content-Type': 'application/json' });
       failHeaders.append('Set-Cookie', serializeCookie('__session', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 }));
       failHeaders.append('Set-Cookie', serializeCookie('__refresh', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 }));
-      failHeaders.append('Set-Cookie', serializeCookie('__refresh', '', { path: '/api/auth', maxAge: 0 }));
       return new Response(JSON.stringify({ error: 'Session expired' }), { status: 401, headers: failHeaders });
     }
 

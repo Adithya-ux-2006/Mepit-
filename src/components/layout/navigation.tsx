@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -38,10 +39,12 @@ export function Navigation() {
     <aside className="w-60 border-r border-sidebar-border bg-sidebar flex flex-col shrink-0">
       <div className="px-5 py-4 border-b border-sidebar-border">
         <Link href="/dashboard" className="flex items-center gap-2.5">
-          <img
+          <Image
             src="/grune-logo.png"
             alt="Grüne Designs"
-            className="h-8 w-8 rounded-lg object-contain"
+            width={32}
+            height={32}
+            className="rounded-lg object-contain"
           />
           <span className="text-sm font-bold text-sidebar-foreground tracking-tight">
             Grüne
