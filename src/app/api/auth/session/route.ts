@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 
@@ -59,8 +58,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to obtain session token' }, { status: 500 });
     }
 
-    const cookieStore = await cookies();
-    cookieStore.set('__session', sessionToken, {
+    const response = NextResponse.json({ success: true, uid: userId });
+
+    response.cookies.set('__session', sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -69,16 +69,18 @@ export async function POST(request: Request) {
     });
 
     if (refreshToken) {
-      cookieStore.set('__refresh', refreshToken, {
+      response.cookies.set('__refresh', refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        path: '/api/auth',
+        path: '/',
         maxAge: 60 * 60 * 24 * 30,
       });
+    } else {
+      response.cookies.set('__refresh', '', { path: '/api/auth', maxAge: 0 });
     }
 
-    return NextResponse.json({ success: true, uid: userId });
+    return response;
   } catch (err) {
     console.error('Session POST unhandled error:', err);
     return NextResponse.json({ error: 'Internal server error during session creation' }, { status: 500 });
@@ -89,8 +91,8 @@ export async function DELETE(request: Request) {
   const blocked = rateLimitResponse(request, rateLimits.logout);
   if (blocked) return blocked;
 
-  const cookieStore = await cookies();
-  cookieStore.delete('__session');
-  cookieStore.delete('__refresh');
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+  response.cookies.delete('__session');
+  response.cookies.delete('__refresh');
+  return response;
 }
