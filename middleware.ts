@@ -12,6 +12,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hasRefreshToken = !!request.cookies.get('__refresh')?.value;
 
   const isApiRoute = pathname.startsWith('/api/');
   const isStatic = pathname.startsWith('/_next') || pathname.startsWith('/favicon');
@@ -107,15 +108,13 @@ export async function middleware(request: NextRequest) {
   );
 
   if (!session) {
-    if (isApiRoute) {
+    if (isApiRoute || hasRefreshToken) {
       return response;
     }
+
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
-    const redirectResponse = NextResponse.redirect(loginUrl);
-    redirectResponse.cookies.set('__session', '', { path: '/', maxAge: 0 });
-    redirectResponse.cookies.set('__refresh', '', { path: '/', maxAge: 0 });
-    return redirectResponse;
+    return NextResponse.redirect(loginUrl);
   }
 
   return response;
