@@ -1,6 +1,7 @@
-import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
+import { clearSessionCookies, setSessionCookies } from '@/lib/session-cookies';
 
 export async function POST(request: Request) {
   try {
@@ -26,32 +27,14 @@ export async function POST(request: Request) {
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     const isProd = process.env.NODE_ENV === 'production';
 
-    const collectedCookies: { name: string; value: string; options?: Record<string, unknown> }[] = [];
-
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        getAll() {
-          const cookieHeader = request.headers.get('cookie') || '';
-          if (!cookieHeader) return [];
-          return cookieHeader.split(';').map(c => c.trim()).filter(Boolean).map(c => {
-            const eq = c.indexOf('=');
-            if (eq === -1) return { name: c, value: '' };
-            return { name: decodeURIComponent(c.slice(0, eq)).trim(), value: decodeURIComponent(c.slice(eq + 1)) };
-          });
-        },
-        setAll(cookiesToSet) {
-          collectedCookies.push(...cookiesToSet);
-        },
-      },
-      cookieOptions: {
-        name: '__session',
-        maxAge: 60 * 60,
-        sameSite: 'lax' as const,
-        path: '/',
-        httpOnly: true,
-        secure: isProd,
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
     });
+
+    let session: { access_token: string; refresh_token: string } | null = null;
 
     if (isSignUp) {
       const { data, error } = await supabase.auth.signUp({ email, password });
@@ -63,46 +46,23 @@ export async function POST(request: Request) {
           error: 'Account created. Please check your email for a confirmation link before signing in.',
         }, { status: 200 });
       }
+      session = data.session;
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         const message = error.message === 'Invalid login credentials'
           ? 'Invalid email or password.'
           : error.message;
         return NextResponse.json({ error: message }, { status: 401 });
       }
+      session = data.session;
     }
 
     const response = NextResponse.json({ success: true });
-    for (const { name, value, options } of collectedCookies) {
-      if (name === '__session') {
-        const isDelete = !value || (options as Record<string, unknown>)?.maxAge === 0;
-        if (isDelete) {
-          response.cookies.set('__session', '', { path: '/', maxAge: 0 });
-          response.cookies.set('__refresh', '', { path: '/', maxAge: 0 });
-        } else {
-          try {
-            const session = JSON.parse(value);
-            if (session.access_token) {
-              response.cookies.set('__session', session.access_token, {
-                httpOnly: true, secure: isProd, sameSite: 'lax', path: '/',
-                maxAge: 60 * 60,
-              });
-            }
-            if (session.refresh_token) {
-              response.cookies.set('__refresh', session.refresh_token, {
-                httpOnly: true, secure: isProd, sameSite: 'lax', path: '/',
-                maxAge: 60 * 60 * 24 * 30,
-              });
-            }
-          } catch {
-            response.cookies.set(name, value, options);
-          }
-        }
-      } else {
-        response.cookies.set(name, value, options);
-      }
+    if (session) {
+      setSessionCookies(response, session, isProd);
     }
+
     return response;
   } catch (err) {
     console.error('Session POST unhandled error:', err);
@@ -115,7 +75,6 @@ export async function DELETE(request: Request) {
   if (blocked) return blocked;
 
   const response = NextResponse.json({ success: true });
-  response.cookies.set('__session', '', { path: '/', maxAge: 0 });
-  response.cookies.set('__refresh', '', { path: '/', maxAge: 0 });
+  clearSessionCookies(response);
   return response;
 }
