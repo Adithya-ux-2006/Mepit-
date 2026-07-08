@@ -16,10 +16,30 @@ import {
 } from '@/components/ui/card';
 import { ArrowLeft, Pencil, Save, X } from 'lucide-react';
 import type { Project, ProjectInputs, ProjectKpiOutput, KpiFormula, ValidationRule } from '@/types';
+import {
+  ENGINEERING_SERVICE_GROUPS,
+  PROJECT_INPUT_FIELD_META,
+  TOTAL_COST_FIELDS,
+  formatProjectInputValue,
+  type ProjectInputField,
+} from '@/lib/project-input-config';
+import { evaluateValidationRules } from '@/lib/validation-engine';
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
 }
+
+const editableInputKeys = new Set<ProjectInputField>([
+  'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
+  'office_area', 'fb_area', 'gross_area',
+  'occupancy_density_office', 'occupancy_density_fb',
+  'total_tr', 'total_airflow_cfm', 'hvac_strategy',
+  'transformer_capacity_kva', 'tenant_power_kva', 'common_area_power_kva',
+  'lighting_load_w', 'dg_capacity_kva', 'dg_loading_factor',
+  'annual_energy_kwh', 'hvac_cost', 'electrical_cost', 'dg_cost',
+  'fire_fighting_cost', 'stp_cost', 'phe_cost', 'bms_cost',
+  'fapa_cost', 'cctv_cost', 'total_mep_cost', 'operating_hours',
+]);
 
 function getBenchmark(
   kpiCode: string,
@@ -122,40 +142,20 @@ export default function ProjectDetailPage() {
               Object.entries(i).filter(([k]) => !['id', 'project_id', 'extended_fields'].includes(k))
             ),
           };
-          const results = rules.map((r) => {
-            const val = formData[r.field_name];
-            const expr = r.rule_expression;
-            switch (r.rule_type) {
-              case 'required': {
-                const min = typeof expr.min === 'number' ? expr.min : undefined;
-                const passed = !(
-                  val == null ||
-                  (typeof val === 'string' && val.trim() === '') ||
-                  (typeof val === 'number' && min !== undefined && val < min)
-                );
-                return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
-              }
-              case 'min_value': {
-                const min = typeof expr.min === 'number' ? expr.min : 0;
-                const passed = typeof val !== 'number' || val >= min;
-                return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
-              }
-              case 'max_value': {
-                const max = typeof expr.max === 'number' ? expr.max : Infinity;
-                const passed = typeof val !== 'number' || val <= max;
-                return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
-              }
-              case 'cross_field':
-                if (typeof expr.max_field === 'string') {
-                  const ref = formData[expr.max_field];
-                  const passed = typeof val !== 'number' || typeof ref !== 'number' || val <= ref;
-                  return { field: r.field_name, passed, message: passed ? 'Passed' : r.error_message };
-                }
-                return { field: r.field_name, passed: true, message: 'Passed' };
-              default:
-                return { field: r.field_name, passed: true, message: 'Passed' };
-            }
-          });
+          const evaluatedErrors = evaluateValidationRules(formData, rules);
+          const results = rules.map((r) => ({
+            field: r.field_name,
+            passed: !evaluatedErrors.some((entry) => (
+              entry.field === r.field_name &&
+              entry.rule_type === r.rule_type &&
+              entry.error_message === r.error_message
+            )),
+            message: evaluatedErrors.find((entry) => (
+              entry.field === r.field_name &&
+              entry.rule_type === r.rule_type &&
+              entry.error_message === r.error_message
+            ))?.error_message ?? 'Passed',
+          }));
           setValidationResults(results);
         }
 
@@ -200,6 +200,8 @@ export default function ProjectDetailPage() {
     if (!outputsByCategory[cat]) outputsByCategory[cat] = [];
     outputsByCategory[cat].push(o);
   }
+
+  const groupedInputFields = [...ENGINEERING_SERVICE_GROUPS, { key: 'total', title: 'Total', fields: TOTAL_COST_FIELDS }];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -342,8 +344,8 @@ export default function ProjectDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1.5">
-              {validationResults.map((r) => (
-                <div key={r.field} className="flex items-center gap-2 text-xs">
+              {validationResults.map((r, index) => (
+                <div key={`${r.field}-${index}`} className="flex items-center gap-2 text-xs">
                   <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${r.passed ? 'bg-green-500' : 'bg-red-500'}`} />
                   <span className="font-mono text-muted-foreground w-40 shrink-0">{r.field}</span>
                   <span className={r.passed ? 'text-green-700' : 'text-red-600'}>{r.message}</span>
@@ -458,21 +460,10 @@ export default function ProjectDetailPage() {
                 </div>
               ) : (
                 <Button size="sm" variant="outline" onClick={() => {
-                  const numericKeys = new Set([
-                    'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
-                    'office_area', 'fb_area', 'gross_area',
-                    'occupancy_density_office', 'occupancy_density_fb',
-                    'total_tr', 'total_airflow_cfm',
-                    'transformer_capacity_kva', 'tenant_power_kva', 'common_area_power_kva',
-                    'lighting_load_w', 'dg_capacity_kva', 'dg_loading_factor',
-                    'annual_energy_kwh', 'hvac_cost', 'electrical_cost', 'dg_cost',
-                    'fire_fighting_cost', 'stp_cost', 'phe_cost', 'bms_cost',
-                    'fapa_cost', 'cctv_cost', 'total_mep_cost', 'operating_hours',
-                  ]);
                   const form: Record<string, unknown> = {};
                   for (const [k, v] of Object.entries(inputs)) {
-                    if (!['id', 'project_id', 'extended_fields'].includes(k)) {
-                      form[k] = numericKeys.has(k) && v != null ? Number(v) : v;
+                    if (editableInputKeys.has(k as ProjectInputField)) {
+                      form[k] = typeof v === 'number' && v != null ? Number(v) : v;
                     }
                   }
                   setEditForm(form);
@@ -484,42 +475,71 @@ export default function ProjectDetailPage() {
             )}
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
-              {editing ? (
-                Object.entries(editForm)
-                  .filter(([key]) => !['id', 'project_id', 'extended_fields'].includes(key))
-                  .map(([key, val]) => (
-                    <div key={key} className="space-y-1">
-                      <label className="text-xs text-muted-foreground block">
-                        {key.replace(/_/g, ' ')}
-                      </label>
-                      <input
-                        type={typeof val === 'number' || (typeof val === 'string' && !isNaN(Number(val)) && val !== '') ? 'number' : 'text'}
-                        value={val == null ? '' : String(val)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setEditForm((prev) => ({
-                            ...prev,
-                            [key]: v === '' ? null : (typeof val === 'number' ? Number(v) : v),
-                          }));
-                        }}
-                        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-                      />
+            <div className="space-y-4 text-sm">
+              {groupedInputFields.map((group) => {
+                const visibleFields = group.fields.filter((field) => {
+                  const value = editing ? editForm[field] : inputs[field];
+                  return editing || (value != null && value !== '');
+                });
+
+                if (visibleFields.length === 0) return null;
+
+                return (
+                  <div key={group.key} className="space-y-3">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{group.title}</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {visibleFields.map((field) => {
+                        const value = editing ? editForm[field] : inputs[field];
+                        const meta = PROJECT_INPUT_FIELD_META[field];
+                        return editing ? (
+                          <div key={field} className="space-y-1">
+                            <label className="text-xs text-muted-foreground block">
+                              {meta.label}{meta.unit ? ` (${meta.unit})` : ''}
+                            </label>
+                            {meta.kind === 'select' ? (
+                              <select
+                                value={value == null ? '' : String(value)}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setEditForm((prev) => ({ ...prev, [field]: nextValue || null }));
+                                }}
+                                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                              >
+                                <option value="">Select...</option>
+                                {(meta.options ?? []).map((option) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="number"
+                                min={meta.min ?? 0}
+                                step={meta.decimals != null ? `0.${'0'.repeat(Math.max(meta.decimals - 1, 0))}1` : 'any'}
+                                value={value == null ? '' : String(value)}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setEditForm((prev) => ({
+                                    ...prev,
+                                    [field]: nextValue === '' ? null : Number(nextValue),
+                                  }));
+                                }}
+                                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <div key={field}>
+                            <span className="text-xs text-muted-foreground block">
+                              {meta.label}{meta.unit ? ` (${meta.unit})` : ''}
+                            </span>
+                            <span className="font-medium">{formatProjectInputValue(field, value)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))
-              ) : (
-                Object.entries(inputs)
-                  .filter(([key]) => !['id', 'project_id', 'extended_fields'].includes(key))
-                  .filter(([, val]) => val != null && val !== '')
-                  .map(([key, val]) => (
-                    <div key={key}>
-                      <span className="text-xs text-muted-foreground block">
-                        {key.replace(/_/g, ' ')}
-                      </span>
-                      <span className="font-medium">{String(val)}</span>
-                    </div>
-                  ))
-              )}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>

@@ -10,6 +10,7 @@ import type {
   User,
 } from '@/types';
 import { validateInput, createProjectSchema, projectInputsSchema, upsertUserSchema, createAuditLogSchema } from '@/lib/validations';
+import { evaluateValidationRules } from '@/lib/validation-engine';
 
 function getDb() {
   if (!supabase || !isConfigured) throw new Error('Supabase is not configured');
@@ -426,7 +427,7 @@ export function runFormulaEngine(
     }
 
     case 'HVAC_RS_SQFT':
-      return { value: safeDiv(hvac_cost, bua) };
+      return { value: hvac_cost ?? null };
 
     case 'TOTAL_VA_SQFT_CARPET': {
       const totalPower = safeMul(
@@ -470,31 +471,31 @@ export function runFormulaEngine(
       return { value: safeDiv(annual_energy_kwh, gross_area) };
 
     case 'TOTAL_MEP_RS_SQFT':
-      return { value: safeDiv(total_mep_cost, bua) };
+      return { value: total_mep_cost ?? null };
 
     case 'ELECTRICAL_RS_SQFT':
-      return { value: safeDiv(electrical_cost, bua) };
+      return { value: electrical_cost ?? null };
 
     case 'DG_RS_SQFT':
-      return { value: safeDiv(dg_cost, bua) };
+      return { value: dg_cost ?? null };
 
     case 'FF_RS_SQFT':
-      return { value: safeDiv(fire_fighting_cost, bua) };
+      return { value: fire_fighting_cost ?? null };
 
     case 'STP_RS_SQFT':
-      return { value: safeDiv(stp_cost, bua) };
+      return { value: stp_cost ?? null };
 
     case 'PHE_RS_SQFT':
-      return { value: safeDiv(phe_cost, bua) };
+      return { value: phe_cost ?? null };
 
     case 'BMS_RS_SQFT':
-      return { value: safeDiv(bms_cost, bua) };
+      return { value: bms_cost ?? null };
 
     case 'FAPA_RS_SQFT':
-      return { value: safeDiv(fapa_cost, bua) };
+      return { value: fapa_cost ?? null };
 
     case 'CCTV_RS_SQFT':
-      return { value: safeDiv(cctv_cost, bua) };
+      return { value: cctv_cost ?? null };
 
     default:
       return { value: null, reason: `Unknown KPI code: ${kpiCode}` };
@@ -515,141 +516,7 @@ export async function validateProjectInputs(
   formData: Record<string, unknown>
 ): Promise<ValidationError[]> {
   const rules = await getValidationRules();
-  const errors: ValidationError[] = [];
-
-  for (const rule of rules) {
-    const fieldValue = formData[rule.field_name];
-    const expr = rule.rule_expression;
-
-    switch (rule.rule_type) {
-      case 'required': {
-        const min = typeof expr.min === 'number' ? expr.min : undefined;
-        if (
-          fieldValue == null ||
-          (typeof fieldValue === 'string' && fieldValue.trim() === '') ||
-          (typeof fieldValue === 'number' && min !== undefined && fieldValue < min)
-        ) {
-          errors.push({
-            field: rule.field_name,
-            rule_type: rule.rule_type,
-            error_message: rule.error_message,
-          });
-        }
-        break;
-      }
-
-      case 'min_value': {
-        const min = typeof expr.min === 'number' ? expr.min : 0;
-        if (
-          typeof fieldValue === 'number' &&
-          fieldValue !== null &&
-          fieldValue < min
-        ) {
-          errors.push({
-            field: rule.field_name,
-            rule_type: rule.rule_type,
-            error_message: rule.error_message,
-          });
-        }
-        break;
-      }
-
-      case 'max_value': {
-        const max = typeof expr.max === 'number' ? expr.max : Infinity;
-        if (
-          typeof fieldValue === 'number' &&
-          fieldValue !== null &&
-          fieldValue > max
-        ) {
-          errors.push({
-            field: rule.field_name,
-            rule_type: rule.rule_type,
-            error_message: rule.error_message,
-          });
-        }
-        break;
-      }
-
-      case 'cross_field': {
-        // Check max_field constraint
-        if (typeof expr.max_field === 'string') {
-          const maxFieldVal = formData[expr.max_field];
-          if (
-            typeof fieldValue === 'number' &&
-            typeof maxFieldVal === 'number' &&
-            fieldValue > maxFieldVal
-          ) {
-            errors.push({
-              field: rule.field_name,
-              rule_type: rule.rule_type,
-              error_message: rule.error_message,
-            });
-          }
-        }
-
-        // Check min_sum_of constraint
-        if (Array.isArray(expr.min_sum_of)) {
-          const sum = expr.min_sum_of.reduce(
-            (acc: number, f: string) => acc + ((formData[f] as number) ?? 0),
-            0
-          );
-          const tolerancePct = typeof expr.tolerance_pct === 'number' ? expr.tolerance_pct : 0.01;
-          if (
-            typeof fieldValue === 'number' &&
-            fieldValue > 0 &&
-            sum > 0 &&
-            Math.abs(fieldValue - sum) > Math.max(fieldValue * tolerancePct, 1)
-          ) {
-            errors.push({
-              field: rule.field_name,
-              rule_type: rule.rule_type,
-              error_message: rule.error_message,
-            });
-          }
-        }
-
-        // Check ratio constraints (min_ratio / max_ratio of a reference field)
-        if (typeof expr.min_ratio === 'number' && typeof expr.ratio_field === 'string') {
-          const refVal = formData[expr.ratio_field];
-          if (
-            typeof fieldValue === 'number' &&
-            typeof refVal === 'number' &&
-            refVal > 0
-          ) {
-            const ratio = fieldValue / refVal;
-            if (ratio < expr.min_ratio) {
-              errors.push({
-                field: rule.field_name,
-                rule_type: rule.rule_type,
-                error_message: rule.error_message,
-              });
-            }
-          }
-        }
-
-        if (typeof expr.max_ratio === 'number' && typeof expr.ratio_field === 'string') {
-          const refVal = formData[expr.ratio_field];
-          if (
-            typeof fieldValue === 'number' &&
-            typeof refVal === 'number' &&
-            refVal > 0
-          ) {
-            const ratio = fieldValue / refVal;
-            if (ratio > expr.max_ratio) {
-              errors.push({
-                field: rule.field_name,
-                rule_type: rule.rule_type,
-                error_message: rule.error_message,
-              });
-            }
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  return errors;
+  return evaluateValidationRules(formData, rules);
 }
 
 export async function getValidationRules(): Promise<ValidationRule[]> {

@@ -1,9 +1,19 @@
 'use client';
 
-import { useState, useCallback, useEffect, Suspense } from 'react';
+import { useState, useCallback, useEffect, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { createProject, upsertProjectInputs, updateProjectStatus, createAuditLog, validateProjectInputs, getProjectById, updateProject, type ValidationError } from '@/lib/api';
+import {
+  createProject,
+  upsertProjectInputs,
+  updateProjectStatus,
+  createAuditLog,
+  validateProjectInputs,
+  getProjectById,
+  getProjectInputs,
+  updateProject,
+  type ValidationError,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +24,15 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  COST_FIELDS,
+  ENGINEERING_SERVICE_GROUPS,
+  HVAC_STRATEGY_OPTIONS,
+  PROJECT_INPUT_FIELD_META,
+  TOTAL_COST_FIELDS,
+  type ProjectInputField,
+} from '@/lib/project-input-config';
+import { getRequiredValidationErrors } from '@/lib/validation-engine';
 
 interface FormState {
   project_name: string;
@@ -102,9 +121,62 @@ const typologies = [
   'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional',
 ];
 
-const hvacStrategies = [
-  'Central Plant', 'VRF', 'Hybrid', 'Split AC', 'Other',
-];
+const projectFieldLabels: Record<string, string> = {
+  project_name: 'Project Name',
+  typology: 'Typology',
+  location_city: 'City',
+  project_year: 'Project Year',
+  built_up_area: 'Built Up Area',
+  carpet_area: 'Carpet Area',
+  saleable_area: 'Saleable Area',
+  leasable_area: 'Leasable Area',
+};
+
+function buildProjectFieldErrors(form: FormState): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!form.project_name.trim()) errors.project_name = 'Project Name is required.';
+  if (!form.typology) errors.typology = 'Typology is required.';
+  if (!form.location_city.trim()) errors.location_city = 'City is required.';
+  if (!Number.isInteger(form.project_year) || form.project_year < 1980 || form.project_year > 2100) {
+    errors.project_year = 'Project Year must be between 1980 and 2100.';
+  }
+  return errors;
+}
+
+function buildSubmitValidationData(data: FormState): Record<string, unknown> {
+  return {
+    project_name: data.project_name,
+    typology: data.typology,
+    built_up_area: data.built_up_area,
+    carpet_area: data.carpet_area,
+    saleable_area: data.saleable_area,
+    leasable_area: data.leasable_area,
+    plant_room_area: data.plant_room_area,
+    leasable_plant_room_area: data.leasable_plant_room_area,
+    shaft_area: data.shaft_area,
+    occupancy_density_office: data.occupancy_density_office,
+    occupancy_density_fb: data.occupancy_density_fb,
+    total_tr: data.total_tr,
+    total_airflow_cfm: data.total_airflow_cfm,
+    operating_hours: data.operating_hours,
+    tenant_power_kva: data.tenant_power_kva,
+    common_area_power_kva: data.common_area_power_kva,
+    transformer_capacity_kva: data.transformer_capacity_kva,
+    dg_capacity_kva: data.dg_capacity_kva,
+    dg_loading_factor: data.dg_loading_factor,
+    annual_energy_kwh: data.annual_energy_kwh,
+    hvac_cost: data.hvac_cost,
+    electrical_cost: data.electrical_cost,
+    dg_cost: data.dg_cost,
+    fire_fighting_cost: data.fire_fighting_cost,
+    stp_cost: data.stp_cost,
+    phe_cost: data.phe_cost,
+    bms_cost: data.bms_cost,
+    fapa_cost: data.fapa_cost,
+    cctv_cost: data.cctv_cost,
+    total_mep_cost: data.total_mep_cost,
+  };
+}
 
 function Section({
   title,
@@ -130,6 +202,11 @@ function Section({
   );
 }
 
+function FieldError({ error }: { error?: string }) {
+  if (!error) return null;
+  return <p className="text-xs text-destructive">{error}</p>;
+}
+
 function NumField({
   label,
   unit,
@@ -137,6 +214,8 @@ function NumField({
   onChange,
   placeholder,
   min,
+  error,
+  decimals,
 }: {
   label: string;
   unit: string;
@@ -144,23 +223,41 @@ function NumField({
   onChange: (v: number | null) => void;
   placeholder?: string;
   min?: number;
+  error?: string;
+  decimals?: number;
 }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground">
-        {label} <span className="text-[10px]">({unit})</span>
+        {label} {unit ? <span className="text-[10px]">({unit})</span> : null}
       </Label>
       <Input
         type="number"
         value={value ?? ''}
         onChange={(e) => {
-          const v = e.target.value;
-          onChange(v === '' ? null : Number(v));
+          const rawValue = e.target.value;
+          if (rawValue === '') {
+            onChange(null);
+            return;
+          }
+
+          if (min != null && rawValue.startsWith('-')) return;
+          if (decimals != null) {
+            const [, decimalPart = ''] = rawValue.split('.');
+            if (decimalPart.length > decimals) return;
+          }
+
+          const nextValue = Number(rawValue);
+          if (Number.isNaN(nextValue)) return;
+          if (min != null && nextValue < min) return;
+          onChange(nextValue);
         }}
         placeholder={placeholder}
         min={min}
-        className="h-8 text-sm"
+        step={decimals != null ? `0.${'0'.repeat(Math.max(decimals - 1, 0))}1` : undefined}
+        className={`h-8 text-sm ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
       />
+      <FieldError error={error} />
     </div>
   );
 }
@@ -171,12 +268,14 @@ function SelectField({
   onChange,
   options,
   placeholder,
+  error,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  options: readonly string[];
   placeholder?: string;
+  error?: string;
 }) {
   return (
     <div className="space-y-1.5">
@@ -184,13 +283,14 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+        className={`h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm ${error ? 'border-destructive' : 'border-input'}`}
       >
         <option value="">{placeholder ?? 'Select...'}</option>
         {options.map((o) => (
           <option key={o} value={o}>{o}</option>
         ))}
       </select>
+      <FieldError error={error} />
     </div>
   );
 }
@@ -198,138 +298,135 @@ function SelectField({
 function CreateProjectForm() {
   const router = useRouter();
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('id');
+
   const [form, setForm] = useState<FormState>(defaultForm);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [costWarning, setCostWarning] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [showValidation, setShowValidation] = useState(false);
+  const [projectFieldErrors, setProjectFieldErrors] = useState<Record<string, string>>({});
+  const [loadingProject, setLoadingProject] = useState(!!editId);
+  const [existingProjectId, setExistingProjectId] = useState<string | null>(editId);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
 
   const update = useCallback(<K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+    setSaveMessage('');
+    setError('');
+    setProjectFieldErrors((prev) => {
+      if (!prev[field as string]) return prev;
+      const next = { ...prev };
+      delete next[field as string];
+      return next;
+    });
+    setValidationErrors((prev) => prev.filter((entry) => entry.field !== field));
   }, []);
 
-  const costFields: (keyof Pick<FormState, 'hvac_cost' | 'electrical_cost' | 'dg_cost' | 'fire_fighting_cost' | 'stp_cost' | 'phe_cost' | 'bms_cost' | 'fapa_cost' | 'cctv_cost' | 'total_mep_cost'>)[] = [
-    'hvac_cost', 'electrical_cost', 'dg_cost', 'fire_fighting_cost',
-    'stp_cost', 'phe_cost', 'bms_cost', 'fapa_cost', 'cctv_cost',
-  ];
+  const costFields = COST_FIELDS.filter((field) => field !== 'total_mep_cost');
+  const sumOfCosts = costFields.reduce((sum, field) => sum + (Number(form[field]) || 0), 0);
 
-  const sumOfCosts = costFields.reduce((sum, f) => sum + ((form[f] as number | null) ?? 0), 0);
-
-  const handleCostCheck = () => {
+  const costWarning = useMemo(() => {
     if (form.total_mep_cost != null && sumOfCosts > 0 && Math.abs(form.total_mep_cost - sumOfCosts) > 1) {
-      setCostWarning(`Sum of package costs (${sumOfCosts.toLocaleString()}) does not match Total MEP Cost (${form.total_mep_cost.toLocaleString()})`);
-    } else {
-      setCostWarning('');
+      return `Sum of package costs (${sumOfCosts.toFixed(2)} ₹/Sq.ft) does not match Total MEP Cost (${form.total_mep_cost.toFixed(2)} ₹/Sq.ft)`;
     }
-  };
+    return '';
+  }, [form.total_mep_cost, sumOfCosts]);
+
+  const fieldErrorMap = useMemo(() => {
+    const next: Record<string, string> = { ...projectFieldErrors };
+    for (const entry of validationErrors) {
+      if (!next[entry.field]) next[entry.field] = entry.error_message;
+    }
+    return next;
+  }, [projectFieldErrors, validationErrors]);
 
   const runValidation = useCallback(async (data: FormState) => {
-    const allData: Record<string, unknown> = {
-      project_name: data.project_name,
-      typology: data.typology,
-      built_up_area: data.built_up_area,
-      carpet_area: data.carpet_area,
-      saleable_area: data.saleable_area,
-      leasable_area: data.leasable_area,
-      plant_room_area: data.plant_room_area,
-      leasable_plant_room_area: data.leasable_plant_room_area,
-      shaft_area: data.shaft_area,
-      occupancy_density_office: data.occupancy_density_office,
-      occupancy_density_fb: data.occupancy_density_fb,
-      total_tr: data.total_tr,
-      total_airflow_cfm: data.total_airflow_cfm,
-      operating_hours: data.operating_hours,
-      tenant_power_kva: data.tenant_power_kva,
-      common_area_power_kva: data.common_area_power_kva,
-      transformer_capacity_kva: data.transformer_capacity_kva,
-      dg_capacity_kva: data.dg_capacity_kva,
-      dg_loading_factor: data.dg_loading_factor,
-      annual_energy_kwh: data.annual_energy_kwh,
-      hvac_cost: data.hvac_cost,
-      electrical_cost: data.electrical_cost,
-      dg_cost: data.dg_cost,
-      fire_fighting_cost: data.fire_fighting_cost,
-      stp_cost: data.stp_cost,
-      phe_cost: data.phe_cost,
-      bms_cost: data.bms_cost,
-      fapa_cost: data.fapa_cost,
-      cctv_cost: data.cctv_cost,
-      total_mep_cost: data.total_mep_cost,
-    };
-    const errors = await validateProjectInputs(allData);
+    const errors = await validateProjectInputs(buildSubmitValidationData(data));
     setValidationErrors(errors);
     setShowValidation(true);
     return errors;
   }, []);
 
-  const searchParams = useSearchParams();
-  const editId = searchParams.get('id');
-  const [loadingProject, setLoadingProject] = useState(!!editId);
-  const [existingProjectId, setExistingProjectId] = useState<string | null>(editId);
-  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
-
   useEffect(() => {
     if (!editId) return;
-    getProjectById(editId).then((p) => {
-      if (!p) return;
-      if (p.status !== 'draft' && p.status !== 'rejected') {
-        // Can only edit draft or rejected projects
-        return;
-      }
-      setForm({
-        project_name: p.project_name,
-        typology: p.typology,
-        location_city: p.location_city,
-        location_state: p.location_state,
-        project_year: p.project_year,
-        built_up_area: p.built_up_area,
-        carpet_area: p.carpet_area,
-        saleable_area: p.saleable_area,
-        leasable_area: p.leasable_area,
-        // Input fields stay as defaults until we fetch inputs separately
-        plant_room_area: null,
-        leasable_plant_room_area: null,
-        shaft_area: null,
-        office_area: null,
-        fb_area: null,
-        gross_area: null,
-        occupancy_density_office: null,
-        occupancy_density_fb: null,
-        total_tr: null,
-        total_airflow_cfm: null,
-        hvac_strategy: '',
-        transformer_capacity_kva: null,
-        tenant_power_kva: null,
-        common_area_power_kva: null,
-        lighting_load_w: null,
-        dg_capacity_kva: null,
-        dg_loading_factor: null,
-        annual_energy_kwh: null,
-        hvac_cost: null,
-        electrical_cost: null,
-        dg_cost: null,
-        fire_fighting_cost: null,
-        stp_cost: null,
-        phe_cost: null,
-        bms_cost: null,
-        fapa_cost: null,
-        cctv_cost: null,
-        total_mep_cost: null,
-        operating_hours: null,
-      });
-      setExistingProjectId(p.id);
-      if (p.status === 'rejected') {
-        setRejectionReason(p.rejection_reason);
-      }
-      setLoadingProject(false);
-    });
+
+    Promise.all([getProjectById(editId), getProjectInputs(editId)])
+      .then(([project, inputs]) => {
+        if (!project) return;
+        if (project.status !== 'draft' && project.status !== 'rejected') return;
+
+        setForm({
+          project_name: project.project_name,
+          typology: project.typology,
+          location_city: project.location_city,
+          location_state: project.location_state,
+          project_year: project.project_year,
+          built_up_area: project.built_up_area,
+          carpet_area: project.carpet_area,
+          saleable_area: project.saleable_area,
+          leasable_area: project.leasable_area,
+          plant_room_area: inputs?.plant_room_area ?? null,
+          leasable_plant_room_area: inputs?.leasable_plant_room_area ?? null,
+          shaft_area: inputs?.shaft_area ?? null,
+          office_area: inputs?.office_area ?? null,
+          fb_area: inputs?.fb_area ?? null,
+          gross_area: inputs?.gross_area ?? null,
+          occupancy_density_office: inputs?.occupancy_density_office ?? null,
+          occupancy_density_fb: inputs?.occupancy_density_fb ?? null,
+          total_tr: inputs?.total_tr ?? null,
+          total_airflow_cfm: inputs?.total_airflow_cfm ?? null,
+          hvac_strategy: inputs?.hvac_strategy ?? '',
+          transformer_capacity_kva: inputs?.transformer_capacity_kva ?? null,
+          tenant_power_kva: inputs?.tenant_power_kva ?? null,
+          common_area_power_kva: inputs?.common_area_power_kva ?? null,
+          lighting_load_w: inputs?.lighting_load_w ?? null,
+          dg_capacity_kva: inputs?.dg_capacity_kva ?? null,
+          dg_loading_factor: inputs?.dg_loading_factor ?? null,
+          annual_energy_kwh: inputs?.annual_energy_kwh ?? null,
+          hvac_cost: inputs?.hvac_cost ?? null,
+          electrical_cost: inputs?.electrical_cost ?? null,
+          dg_cost: inputs?.dg_cost ?? null,
+          fire_fighting_cost: inputs?.fire_fighting_cost ?? null,
+          stp_cost: inputs?.stp_cost ?? null,
+          phe_cost: inputs?.phe_cost ?? null,
+          bms_cost: inputs?.bms_cost ?? null,
+          fapa_cost: inputs?.fapa_cost ?? null,
+          cctv_cost: inputs?.cctv_cost ?? null,
+          total_mep_cost: inputs?.total_mep_cost ?? null,
+          operating_hours: inputs?.operating_hours ?? 3000,
+        });
+        setExistingProjectId(project.id);
+        setRejectionReason(project.status === 'rejected' ? project.rejection_reason : null);
+      })
+      .finally(() => setLoadingProject(false));
   }, [editId]);
 
   const persist = async (status: 'draft' | 'submitted') => {
     if (!user) return;
+
     setError('');
+    setSaveMessage('');
     setSubmitting(true);
+
+    const currentProjectErrors = buildProjectFieldErrors(form);
+    setProjectFieldErrors(currentProjectErrors);
+    if (Object.keys(currentProjectErrors).length > 0) {
+      setSubmitting(false);
+      setShowValidation(true);
+      return;
+    }
+
+    if (status === 'submitted') {
+      const allValidationErrors = await runValidation(form);
+      const blockingErrors = getRequiredValidationErrors(allValidationErrors);
+      if (blockingErrors.length > 0) {
+        setSubmitting(false);
+        return;
+      }
+    }
 
     const projectData = {
       project_name: form.project_name,
@@ -349,6 +446,7 @@ function CreateProjectForm() {
         : await createProject(projectData);
 
       const projectId = project.id;
+      setExistingProjectId(projectId);
 
       await upsertProjectInputs(projectId, {
         plant_room_area: form.plant_room_area,
@@ -383,14 +481,6 @@ function CreateProjectForm() {
       });
 
       if (status === 'submitted') {
-        // Run Grüne Basis validation before submission
-        const validationErrs = await runValidation(form);
-        if (validationErrs.length > 0) {
-          setSubmitting(false);
-          return;
-        }
-
-        // Move to submitted — no longer auto-approves. An admin must review.
         await updateProjectStatus(projectId, 'submitted');
         await createAuditLog({
           entity_type: 'project',
@@ -398,15 +488,50 @@ function CreateProjectForm() {
           action: 'submitted',
           performed_by: user.id,
         });
+        router.push('/board2/repository');
+        return;
       }
 
-      router.push('/board2/repository');
+      setSaveMessage('Draft saved. You can continue editing without losing the rest of the form.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Operation failed';
       setError(message);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const renderProjectInputField = (field: ProjectInputField) => {
+    const meta = PROJECT_INPUT_FIELD_META[field];
+    const errorMessage = fieldErrorMap[field];
+
+    if (meta.kind === 'select') {
+      return (
+        <SelectField
+          key={field}
+          label={meta.label}
+          value={form[field] as string}
+          onChange={(value) => update(field as keyof FormState, value as FormState[keyof FormState])}
+          options={meta.options ?? HVAC_STRATEGY_OPTIONS}
+          placeholder="Select..."
+          error={errorMessage}
+        />
+      );
+    }
+
+    return (
+      <NumField
+        key={field}
+        label={meta.label}
+        unit={meta.unit ?? ''}
+        value={form[field] as number | null}
+        onChange={(value) => update(field as keyof FormState, value as FormState[keyof FormState])}
+        placeholder={meta.placeholder}
+        min={meta.min}
+        decimals={meta.decimals}
+        error={errorMessage}
+      />
+    );
   };
 
   if (loadingProject) {
@@ -417,12 +542,15 @@ function CreateProjectForm() {
     );
   }
 
+  const requiredErrors = getRequiredValidationErrors(validationErrors);
+  const advisoryErrors = validationErrors.filter((entry) => entry.rule_type !== 'required');
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : 'New Project'}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {existingProjectId ? 'Update project details and resubmit for review.' : 'Enter project details from the Grüne Basis Requirements workbook.'}
+          {existingProjectId ? 'Update project details and resubmit for review.' : 'Enter project details from the Grune Basis Requirements workbook.'}
         </p>
       </div>
 
@@ -438,7 +566,6 @@ function CreateProjectForm() {
         onSubmit={(e) => { e.preventDefault(); persist('draft'); }}
         className="space-y-4"
       >
-        {/* Section 1 — Project Identity */}
         <Section title="1. Project Identity">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -447,15 +574,16 @@ function CreateProjectForm() {
                 value={form.project_name}
                 onChange={(e) => update('project_name', e.target.value)}
                 placeholder="e.g. Green Tower Office"
-                required
-                className="h-8 text-sm"
+                className={`h-8 text-sm ${fieldErrorMap.project_name ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
               />
+              <FieldError error={fieldErrorMap.project_name} />
             </div>
             <SelectField
               label="Typology *"
               value={form.typology}
-              onChange={(v) => update('typology', v)}
+              onChange={(value) => update('typology', value)}
               options={typologies}
+              error={fieldErrorMap.typology}
             />
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">City *</Label>
@@ -463,9 +591,9 @@ function CreateProjectForm() {
                 value={form.location_city}
                 onChange={(e) => update('location_city', e.target.value)}
                 placeholder="e.g. Mumbai"
-                required
-                className="h-8 text-sm"
+                className={`h-8 text-sm ${fieldErrorMap.location_city ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
               />
+              <FieldError error={fieldErrorMap.location_city} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">State</Label>
@@ -480,117 +608,110 @@ function CreateProjectForm() {
               label="Project Year *"
               unit=""
               value={form.project_year}
-              onChange={(v) => update('project_year', v ?? new Date().getFullYear())}
+              onChange={(value) => update('project_year', value ?? new Date().getFullYear())}
               min={1980}
+              error={fieldErrorMap.project_year}
+            />
+            <NumField
+              label="Built Up Area"
+              unit="sqft"
+              value={form.built_up_area}
+              onChange={(value) => update('built_up_area', value)}
+              min={0}
+              error={fieldErrorMap.built_up_area}
+            />
+            <NumField
+              label="Carpet Area"
+              unit="sqft"
+              value={form.carpet_area}
+              onChange={(value) => update('carpet_area', value)}
+              min={0}
+              error={fieldErrorMap.carpet_area}
+            />
+            <NumField
+              label="Saleable Area"
+              unit="sqft"
+              value={form.saleable_area}
+              onChange={(value) => update('saleable_area', value)}
+              min={0}
+              error={fieldErrorMap.saleable_area}
+            />
+            <NumField
+              label="Leasable Area"
+              unit="sqft"
+              value={form.leasable_area}
+              onChange={(value) => update('leasable_area', value)}
+              min={0}
+              error={fieldErrorMap.leasable_area}
             />
           </div>
         </Section>
 
-        {/* Section 2 — Area Schedule */}
-        <Section title="2. Area Schedule">
-          <div className="grid grid-cols-2 gap-4">
-            <NumField label="Built Up Area" unit="sqft" value={form.built_up_area} onChange={(v) => update('built_up_area', v)} />
-            <NumField label="Carpet Area" unit="sqft" value={form.carpet_area} onChange={(v) => update('carpet_area', v)} />
-            <NumField label="Saleable Area" unit="sqft" value={form.saleable_area} onChange={(v) => update('saleable_area', v)} />
-            <NumField label="Leasable Area" unit="sqft" value={form.leasable_area} onChange={(v) => update('leasable_area', v)} />
-            <NumField label="Plant Room Area" unit="sqft" value={form.plant_room_area} onChange={(v) => update('plant_room_area', v)} />
-            <NumField label="Leasable Plant Room Area" unit="sqft" value={form.leasable_plant_room_area} onChange={(v) => update('leasable_plant_room_area', v)} />
-            <NumField label="Shaft Area" unit="sqft" value={form.shaft_area} onChange={(v) => update('shaft_area', v)} />
-            <NumField label="Office Area" unit="sqft" value={form.office_area} onChange={(v) => update('office_area', v)} />
-            <NumField label="F&B Area" unit="sqft" value={form.fb_area} onChange={(v) => update('fb_area', v)} />
-            <NumField label="Gross Area" unit="sqft" value={form.gross_area} onChange={(v) => update('gross_area', v)} />
-          </div>
-        </Section>
+        <Section title="2. Design Parameters">
+          <div className="space-y-4">
+            {ENGINEERING_SERVICE_GROUPS.map((group) => (
+              <Section key={group.key} title={group.title} defaultOpen={group.key === 'area-schedule' || group.key === 'hvac'}>
+                <div className="grid grid-cols-2 gap-4">
+                  {group.fields.map((field) => renderProjectInputField(field))}
+                </div>
+              </Section>
+            ))}
 
-        {/* Section 3 — HVAC Parameters */}
-        <Section title="3. HVAC Parameters">
-          <div className="grid grid-cols-2 gap-4">
-            <NumField label="Total TR" unit="TR" value={form.total_tr} onChange={(v) => update('total_tr', v)} />
-            <NumField label="Total Airflow" unit="CFM" value={form.total_airflow_cfm} onChange={(v) => update('total_airflow_cfm', v)} />
-            <NumField label="Occupancy Density (Office)" unit="sqft/person" value={form.occupancy_density_office} onChange={(v) => update('occupancy_density_office', v)} />
-            <NumField label="Occupancy Density (F&B)" unit="sqft/person" value={form.occupancy_density_fb} onChange={(v) => update('occupancy_density_fb', v)} />
-            <SelectField label="HVAC Strategy" value={form.hvac_strategy} onChange={(v) => update('hvac_strategy', v)} options={hvacStrategies} />
-            <NumField label="Operating Hours" unit="hrs/yr" value={form.operating_hours} onChange={(v) => update('operating_hours', v)} />
-          </div>
-        </Section>
+            <Section title="Total" defaultOpen>
+              <div className="grid grid-cols-2 gap-4">
+                {TOTAL_COST_FIELDS.map((field) => renderProjectInputField(field))}
+              </div>
 
-        {/* Section 4 — Electrical & DG */}
-        <Section title="4. Electrical & DG Parameters">
-          <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Electrical</div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <NumField label="Transformer Capacity" unit="kVA" value={form.transformer_capacity_kva} onChange={(v) => update('transformer_capacity_kva', v)} />
-            <NumField label="Tenant Power" unit="kVA" value={form.tenant_power_kva} onChange={(v) => update('tenant_power_kva', v)} />
-            <NumField label="Common Area Power" unit="kVA" value={form.common_area_power_kva} onChange={(v) => update('common_area_power_kva', v)} />
-            <NumField label="Lighting Load" unit="W" value={form.lighting_load_w} onChange={(v) => update('lighting_load_w', v)} />
-            <NumField label="Annual Energy" unit="kWh" value={form.annual_energy_kwh} onChange={(v) => update('annual_energy_kwh', v)} />
+              {sumOfCosts > 0 && (
+                <div className="text-xs text-muted-foreground pt-2">
+                  Sum of package costs: <strong>{sumOfCosts.toFixed(2)} ₹/Sq.ft (BUA)</strong>
+                </div>
+              )}
+              {costWarning && (
+                <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
+                  {costWarning}
+                </div>
+              )}
+            </Section>
           </div>
-          <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">DG</div>
-          <div className="grid grid-cols-2 gap-4">
-            <NumField label="DG Capacity" unit="kVA" value={form.dg_capacity_kva} onChange={(v) => update('dg_capacity_kva', v)} />
-            <NumField label="DG Loading Factor" unit="0-1" value={form.dg_loading_factor} onChange={(v) => update('dg_loading_factor', v)} />
-          </div>
-        </Section>
-
-        {/* Section 5 — Package Costs */}
-        <Section title="5. Package Costs">
-          <div className="grid grid-cols-2 gap-4">
-            <NumField label="HVAC Cost" unit="Rs" value={form.hvac_cost} onChange={(v) => update('hvac_cost', v)} />
-            <NumField label="Electrical Cost" unit="Rs" value={form.electrical_cost} onChange={(v) => update('electrical_cost', v)} />
-            <NumField label="DG Cost" unit="Rs" value={form.dg_cost} onChange={(v) => update('dg_cost', v)} />
-            <NumField label="Fire Fighting Cost" unit="Rs" value={form.fire_fighting_cost} onChange={(v) => update('fire_fighting_cost', v)} />
-            <NumField label="STP Cost" unit="Rs" value={form.stp_cost} onChange={(v) => update('stp_cost', v)} />
-            <NumField label="PHE Cost" unit="Rs" value={form.phe_cost} onChange={(v) => update('phe_cost', v)} />
-            <NumField label="BMS Cost" unit="Rs" value={form.bms_cost} onChange={(v) => update('bms_cost', v)} />
-            <NumField label="FAPA Cost" unit="Rs" value={form.fapa_cost} onChange={(v) => update('fapa_cost', v)} />
-            <NumField label="CCTV Cost" unit="Rs" value={form.cctv_cost} onChange={(v) => update('cctv_cost', v)} />
-            <NumField label="Total MEP Cost" unit="Rs" value={form.total_mep_cost} onChange={(v) => { update('total_mep_cost', v); setTimeout(handleCostCheck, 0); }} />
-          </div>
-
-          {sumOfCosts > 0 && (
-            <div className="text-xs text-muted-foreground pt-2">
-              Sum of package costs: <strong>Rs {sumOfCosts.toLocaleString()}</strong>
-            </div>
-          )}
-          {costWarning && (
-            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
-              {costWarning}
-            </div>
-          )}
         </Section>
 
         {error && (
           <p className="text-sm text-destructive">{error}</p>
         )}
 
-        {showValidation && validationErrors.length > 0 && (
+        {saveMessage && (
+          <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">{saveMessage}</p>
+        )}
+
+        {showValidation && (Object.keys(projectFieldErrors).length > 0 || requiredErrors.length > 0) && (
           <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-destructive">
-                {validationErrors.length} Grüne Basis validation {validationErrors.length === 1 ? 'issue' : 'issues'} found
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowValidation(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Dismiss
-              </button>
-            </div>
+            <p className="text-sm font-medium text-destructive">Submission blocked until the required fields below are filled.</p>
             <ul className="list-disc list-inside space-y-1">
-              {validationErrors.map((err, i) => (
-                <li key={i} className="text-xs text-destructive">
-                  <span className="font-mono font-medium">{err.field}</span>: {err.error_message}
+              {Object.entries(projectFieldErrors).map(([field, message]) => (
+                <li key={field} className="text-xs text-destructive">
+                  <span className="font-medium">{projectFieldLabels[field] ?? field}</span>: {message}
+                </li>
+              ))}
+              {requiredErrors.map((entry, index) => (
+                <li key={`${entry.field}-${index}`} className="text-xs text-destructive">
+                  <span className="font-mono font-medium">{entry.field}</span>: {entry.error_message}
                 </li>
               ))}
             </ul>
           </div>
         )}
 
-        {showValidation && validationErrors.length === 0 && (
-          <div className="border border-green-200 bg-green-50 rounded-lg p-3">
-            <p className="text-sm text-green-700 font-medium">
-              All Grüne Basis validation checks passed.
-            </p>
+        {showValidation && advisoryErrors.length > 0 && (
+          <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2">
+            <p className="text-sm font-medium text-amber-700">Advisory validation checks</p>
+            <ul className="list-disc list-inside space-y-1">
+              {advisoryErrors.map((entry, index) => (
+                <li key={`${entry.field}-${index}`} className="text-xs text-amber-700">
+                  <span className="font-mono font-medium">{entry.field}</span>: {entry.error_message}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -600,16 +721,8 @@ function CreateProjectForm() {
           </Button>
           <Button
             type="button"
-            disabled={submitting || !form.project_name || !form.typology}
-            onClick={async () => {
-              setSubmitting(true);
-              const errs = await runValidation(form);
-              if (errs.length === 0) {
-                persist('submitted');
-              } else {
-                setSubmitting(false);
-              }
-            }}
+            disabled={submitting}
+            onClick={() => persist('submitted')}
           >
             {submitting ? 'Submitting...' : 'Validate & Submit'}
           </Button>

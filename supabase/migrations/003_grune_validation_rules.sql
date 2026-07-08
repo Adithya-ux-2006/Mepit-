@@ -44,6 +44,7 @@ INSERT INTO validation_rules (field_name, rule_type, rule_expression, error_mess
   ('occupancy_density_fb', 'max_value', '{"max": 60}', 'F&B occupancy density above 60 sqft/person is unusually sparse. Grüne Basis standard is 25 sqft/person.'),
 
   -- Total TR
+  ('total_tr', 'required', '{}', 'Total TR is required for submitted projects.'),
   ('total_tr', 'min_value', '{"min": 1}', 'Total TR must be greater than zero for projects with cooling requirements.'),
 
   -- Cooling density: Chiller = 400+ sqft/TR, VRF = 350 sqft/TR
@@ -64,6 +65,7 @@ INSERT INTO validation_rules (field_name, rule_type, rule_expression, error_mess
   -- ============================================================================
 
   -- Tenant load benchmark: 8 VA/sqft carpet
+  ('tenant_power_kva', 'required', '{}', 'Tenant power capacity is required for submitted projects.'),
   ('tenant_power_kva', 'min_value', '{"min": 1}', 'Tenant power capacity must be greater than zero.'),
   ('tenant_power_kva', 'cross_field', '{"min_ratio": 0.003, "ratio_field": "carpet_area"}', 'Tenant power appears very low. Grüne Basis benchmark is ~8 VA/sqft of carpet area.'),
 
@@ -71,10 +73,12 @@ INSERT INTO validation_rules (field_name, rule_type, rule_expression, error_mess
   ('common_area_power_kva', 'min_value', '{"min": 1}', 'Common area power capacity must be greater than zero.'),
 
   -- Transformer loading: max 80%
+  ('transformer_capacity_kva', 'required', '{}', 'Transformer capacity is required for submitted projects.'),
   ('transformer_capacity_kva', 'min_value', '{"min": 10}', 'Transformer capacity must be at least 10 kVA for commercial projects.'),
   ('transformer_capacity_kva', 'cross_field', '{"min_ratio": 0.8, "ratio_field": "tenant_power_kva"}', 'Transformer capacity should be at least 80% of total connected load. Check transformer sizing vs. tenant + common area power.'),
 
   -- DG
+  ('dg_capacity_kva', 'required', '{}', 'DG capacity is required for submitted projects.'),
   ('dg_capacity_kva', 'min_value', '{"min": 10}', 'DG capacity must be at least 10 kVA for commercial projects.'),
 
   ('dg_loading_factor', 'min_value', '{"min": 0}', 'DG loading factor must be between 0 and 1.'),
@@ -87,27 +91,27 @@ INSERT INTO validation_rules (field_name, rule_type, rule_expression, error_mess
   ('annual_energy_kwh', 'min_value', '{"min": 1}', 'Annual energy consumption must be greater than zero.'),
 
   -- ============================================================================
-  -- COST BENCHMARKS (Grüne Basis Rs/sqft of BUA)
+-- COST BENCHMARKS (Grune Basis stored directly as Rs/sqft of BUA)
   -- ============================================================================
   -- HVAC: 250-300 Rs/sqft BUA
-  ('hvac_cost', 'cross_field', '{"min_ratio": 100, "ratio_field": "built_up_area"}', 'HVAC cost appears very low. Grüne Basis benchmark is Rs 250-300/sqft BUA.'),
-  ('hvac_cost', 'cross_field', '{"max_ratio": 600, "ratio_field": "built_up_area"}', 'HVAC cost exceeds Rs 600/sqft BUA — significantly above Grüne Basis benchmark of Rs 250-300.'),
+  ('hvac_cost', 'cross_field', '{"min_ratio": 100, "value_already_normalized": true}', 'HVAC cost appears very low. Grüne Basis benchmark is Rs 250-300/sqft BUA.'),
+  ('hvac_cost', 'cross_field', '{"max_ratio": 600, "value_already_normalized": true}', 'HVAC cost exceeds Rs 600/sqft BUA — significantly above Grüne Basis benchmark of Rs 250-300.'),
 
   -- Electrical: 250-300 Rs/sqft BUA
-  ('electrical_cost', 'cross_field', '{"min_ratio": 100, "ratio_field": "built_up_area"}', 'Electrical cost appears very low. Grüne Basis benchmark is Rs 250-300/sqft BUA.'),
-  ('electrical_cost', 'cross_field', '{"max_ratio": 600, "ratio_field": "built_up_area"}', 'Electrical cost exceeds Rs 600/sqft BUA — significantly above Grüne Basis benchmark of Rs 250-300.'),
+  ('electrical_cost', 'cross_field', '{"min_ratio": 100, "value_already_normalized": true}', 'Electrical cost appears very low. Grüne Basis benchmark is Rs 250-300/sqft BUA.'),
+  ('electrical_cost', 'cross_field', '{"max_ratio": 600, "value_already_normalized": true}', 'Electrical cost exceeds Rs 600/sqft BUA — significantly above Grüne Basis benchmark of Rs 250-300.'),
 
   -- Plumbing / STP: 70-100 Rs/sqft BUA
-  ('stp_cost', 'cross_field', '{"min_ratio": 30, "ratio_field": "built_up_area"}', 'STP cost appears very low. Grüne Basis benchmark is Rs 70-100/sqft BUA.'),
+  ('stp_cost', 'cross_field', '{"min_ratio": 30, "value_already_normalized": true}', 'STP cost appears very low. Grüne Basis benchmark is Rs 70-100/sqft BUA.'),
 
   -- BMS: 30 Rs/sqft BUA
-  ('bms_cost', 'cross_field', '{"min_ratio": 10, "ratio_field": "built_up_area"}', 'BMS cost appears very low. Grüne Basis benchmark is Rs 30/sqft BUA.'),
+  ('bms_cost', 'cross_field', '{"min_ratio": 10, "value_already_normalized": true}', 'BMS cost appears very low. Grüne Basis benchmark is Rs 30/sqft BUA.'),
 
   -- FAPA: 35 Rs/sqft BUA
-  ('fapa_cost', 'cross_field', '{"min_ratio": 10, "ratio_field": "built_up_area"}', 'FAPA cost appears very low. Grüne Basis benchmark is Rs 35/sqft BUA.'),
+  ('fapa_cost', 'cross_field', '{"min_ratio": 10, "value_already_normalized": true}', 'FAPA cost appears very low. Grüne Basis benchmark is Rs 35/sqft BUA.'),
 
   -- CCTV: 35 Rs/sqft BUA
-  ('cctv_cost', 'cross_field', '{"min_ratio": 10, "ratio_field": "built_up_area"}', 'CCTV cost appears very low. Grüne Basis benchmark is Rs 35/sqft BUA.'),
+  ('cctv_cost', 'cross_field', '{"min_ratio": 10, "value_already_normalized": true}', 'CCTV cost appears very low. Grüne Basis benchmark is Rs 35/sqft BUA.'),
 
   -- ============================================================================
   -- CROSS-FIELD INTEGRITY

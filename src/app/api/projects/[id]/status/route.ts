@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
+import { evaluateValidationRules, getRequiredValidationErrors } from '@/lib/validation-engine';
 import type { ProjectStatus } from '@/types';
 
 const VALID_STATUSES: ProjectStatus[] = ['draft', 'submitted', 'under_review', 'approved', 'rejected'];
@@ -52,6 +53,44 @@ export async function PATCH(
     return NextResponse.json({
       error: `Cannot transition from '${currentStatus}' to '${nextStatus}'`,
     }, { status: 400 });
+  }
+
+  if (nextStatus === 'submitted') {
+    const [projectFieldsResult, projectInputsResult, rulesResult] = await Promise.all([
+      admin
+        .from('projects')
+        .select('project_name, typology, built_up_area, carpet_area, saleable_area, leasable_area')
+        .eq('id', id)
+        .single(),
+      admin.from('project_inputs').select('*').eq('project_id', id).single(),
+      admin.from('validation_rules').select('*').eq('is_active', true),
+    ]);
+
+    if (projectFieldsResult.error || !projectFieldsResult.data) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    if (rulesResult.error) {
+      return NextResponse.json({ error: rulesResult.error.message }, { status: 500 });
+    }
+
+    const formData: Record<string, unknown> = {
+      ...projectFieldsResult.data,
+      ...((projectInputsResult.error || !projectInputsResult.data)
+        ? {}
+        : projectInputsResult.data),
+    };
+
+    const requiredErrors = getRequiredValidationErrors(
+      evaluateValidationRules(formData, rulesResult.data ?? []),
+    );
+
+    if (requiredErrors.length > 0) {
+      return NextResponse.json(
+        { error: 'Required design parameters are missing', validation_errors: requiredErrors },
+        { status: 400 },
+      );
+    }
   }
 
   // Authorization check
