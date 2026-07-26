@@ -6,8 +6,8 @@ import { useAuth } from '@/lib/auth-context';
 import { getProjects, getKpiFormulas, getAuditLogs, getRateLimitStatus, getUserProjects, updateProjectStatus } from '@/lib/api';
 import type { RateLimitStatus } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FilePlus, FolderOpen, BarChart3, CheckCircle, Clock, FileText, Activity, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
-import type { Project, AuditLog } from '@/types';
+import { FilePlus, FolderOpen, BarChart3, CheckCircle, Clock, FileText, Activity, Shield, AlertTriangle, RefreshCw, Database } from 'lucide-react';
+import type { Project, AuditLog, KpiFormula } from '@/types';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [rateLimitData, setRateLimitData] = useState<RateLimitStatus | null>(null);
   const [rlLoading, setRlLoading] = useState(false);
   const [myProjects, setMyProjects] = useState<Project[]>([]);
+  const [formulas, setFormulas] = useState<KpiFormula[]>([]);
 
   useEffect(() => {
     const fetches: Promise<unknown>[] = [getProjects(), getKpiFormulas(), getAuditLogs()];
@@ -28,6 +29,7 @@ export default function DashboardPage() {
       .then(([p, f, logs, mine]) => {
         startTransition(() => {
           setProjects(p as Project[]);
+          setFormulas(f as KpiFormula[]);
           setFormulaCount((f as unknown[]).length);
           setRecentActivity((logs as AuditLog[]).slice(0, 10));
           if (mine) setMyProjects(mine as Project[]);
@@ -37,7 +39,6 @@ export default function DashboardPage() {
       .finally(() => startTransition(() => setLoading(false)));
   }, [user?.id]);
 
-  // Fetch rate limit status for admins
   useEffect(() => {
     if (user?.role === 'admin') {
       startTransition(() => setRlLoading(true));
@@ -158,7 +159,6 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* My Projects */}
       {myProjects.length > 0 && (
         <Card>
           <CardHeader>
@@ -233,7 +233,6 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Recent Activity */}
       {recentActivity.length > 0 && (
         <Card>
           <CardHeader>
@@ -274,13 +273,10 @@ export default function DashboardPage() {
             <Link href="/admin/approvals" className="underline underline-offset-2 hover:text-foreground">
               {pending} pending approvals
             </Link>
-            {' '}&middot;{' '}
-            <Link href="/admin/trust-dashboard" className="underline underline-offset-2 hover:text-foreground">
-              Trust Dashboard
-            </Link>
           </div>
 
-          {/* Rate Limit Status */}
+          <TrustDashboardSection projects={projects} formulas={formulas} />
+
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="flex items-center justify-between text-base">
@@ -307,7 +303,6 @@ export default function DashboardPage() {
             <CardContent>
               {rateLimitData ? (
                 <div className="space-y-4">
-                  {/* Presets */}
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-2">Configured Limits</p>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -322,7 +317,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* Active Buckets */}
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-2">
                       Active IPs ({rateLimitData.totalBuckets} total)
@@ -383,6 +377,277 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// TRUST DASHBOARD SECTION (merged from /admin/trust-dashboard)
+// ============================================================================
+
+function TrustDashboardSection({ projects, formulas }: { projects: Project[]; formulas: KpiFormula[] }) {
+  const approved = projects.filter((p) => p.status === 'approved');
+  const submitted = projects.filter((p) => p.status === 'submitted' || p.status === 'under_review');
+
+  const typologyBreakdown: Record<string, number> = {};
+  for (const p of approved) {
+    typologyBreakdown[p.typology] = (typologyBreakdown[p.typology] ?? 0) + 1;
+  }
+
+  const yearBreakdown: Record<string, number> = {};
+  for (const p of approved) {
+    const y = String(p.project_year);
+    yearBreakdown[y] = (yearBreakdown[y] ?? 0) + 1;
+  }
+
+  const recentProjects = approved.filter((p) => {
+    const year = p.project_year;
+    return year && year >= new Date().getFullYear() - 3;
+  }).length;
+
+  const avgCycleTime = projects
+    .filter((p) => p.approved_at && p.created_at)
+    .reduce((sum, p) => {
+      const diff = new Date(p.approved_at!).getTime() - new Date(p.created_at).getTime();
+      return sum + diff / (1000 * 60 * 60 * 24);
+    }, 0);
+  const avgCycleDays = approved.length ? (avgCycleTime / approved.length).toFixed(1) : '—';
+
+  const allTypologies = ['Office', 'Retail', 'Hospitality', 'Mixed Use', 'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional'];
+  const missingTypologies = allTypologies.filter((t) => !typologyBreakdown[t]);
+  const thinTypologies = Object.entries(typologyBreakdown).filter(([, c]) => c < 3).map(([t]) => t);
+
+  const locationBreakdown: Record<string, number> = {};
+  for (const p of approved) {
+    locationBreakdown[p.location_city] = (locationBreakdown[p.location_city] ?? 0) + 1;
+  }
+
+  const buaValues = approved.map((p) => p.built_up_area).filter((v) => v > 0).sort((a, b) => a - b);
+  const avgBua = buaValues.length ? Math.round(buaValues.reduce((a, b) => a + b, 0) / buaValues.length) : 0;
+  const minBua = buaValues[0] ?? 0;
+  const maxBua = buaValues[buaValues.length - 1] ?? 0;
+
+  const completeProjects = approved.filter((p) =>
+    p.built_up_area > 0 && p.carpet_area > 0 && p.saleable_area > 0 && p.project_year > 0
+  ).length;
+  const completenessScore = approved.length ? Math.round((completeProjects / approved.length) * 100) : 0;
+
+  return (
+    <div className="space-y-6 mt-6">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          Trust Dashboard
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">Repository health and intelligence quality metrics.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Database className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <p className="text-2xl font-semibold">{approved.length}</p>
+              <p className="text-xs text-muted-foreground">Approved Projects</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <BarChart3 className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <p className="text-2xl font-semibold">{formulas.length}</p>
+              <p className="text-xs text-muted-foreground">Active KPI Formulas</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Activity className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <p className="text-2xl font-semibold">{submitted.length}</p>
+              <p className="text-xs text-muted-foreground">Pending Review</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <Clock className="h-8 w-8 text-muted-foreground" />
+            <div>
+              <p className="text-2xl font-semibold">{avgCycleDays}</p>
+              <p className="text-xs text-muted-foreground">Avg Approval Cycle (days)</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Repository Depth by Typology</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {Object.entries(typologyBreakdown).sort((a, b) => b[1] - a[1]).map(([typology, count]) => (
+                <div key={typology}>
+                  <div className="flex justify-between text-xs mb-0.5">
+                    <span>{typology}</span>
+                    <span className="text-muted-foreground">{count} projects</span>
+                  </div>
+                  <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all"
+                      style={{ width: `${(count / Math.max(...Object.values(typologyBreakdown))) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {Object.keys(typologyBreakdown).length === 0 && (
+                <p className="text-xs text-muted-foreground">No approved projects yet.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Data Recency</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span>Projects from last 3 years</span>
+                <span className="font-semibold">{recentProjects} / {approved.length}</span>
+              </div>
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${approved.length ? (recentProjects / approved.length) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-medium text-muted-foreground mb-2">By Year</p>
+              <div className="space-y-1">
+                {Object.entries(yearBreakdown).sort().reverse().map(([year, count]) => (
+                  <div key={year} className="flex justify-between text-xs">
+                    <span>{year}</span>
+                    <span className="text-muted-foreground">{count} projects</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Data Quality</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span>Completeness Score</span>
+                <span className="font-semibold">
+                  <span className={completenessScore >= 80 ? 'text-green-600' : completenessScore >= 50 ? 'text-amber-600' : 'text-red-600'}>
+                    {completenessScore}%
+                  </span>
+                </span>
+              </div>
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${completenessScore >= 80 ? 'bg-green-500' : completenessScore >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                  style={{ width: `${completenessScore}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Average BUA</span>
+                <span className="font-semibold">{avgBua.toLocaleString()} sqft</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>BUA Range</span>
+                <span className="font-semibold">{minBua.toLocaleString()} – {maxBua.toLocaleString()} sqft</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Recommendation Readiness</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span>Typologies with ≥3 approved projects</span>
+                <span className="font-semibold">
+                  {Object.values(typologyBreakdown).filter((c) => c >= 3).length} / {Object.keys(typologyBreakdown).length}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {approved.length < 10
+                  ? 'Repository too thin for reliable recommendations.'
+                  : approved.length < 30
+                    ? 'Improving. Some typologies have enough depth for Medium confidence.'
+                    : 'Healthy repository. Board 3 can produce useful recommendations.'}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {(missingTypologies.length > 0 || thinTypologies.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Repository Gap Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {missingTypologies.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-foreground mb-1">Missing Typologies ({missingTypologies.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {missingTypologies.map((t) => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {thinTypologies.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-foreground mb-1">Thin Typologies ({thinTypologies.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {thinTypologies.map((t) => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{t} ({typologyBreakdown[t]})</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {Object.keys(locationBreakdown).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Location Coverage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {Object.entries(locationBreakdown).sort((a, b) => b[1] - a[1]).map(([city, count]) => (
+                <div key={city} className="flex justify-between text-xs">
+                  <span>{city}</span>
+                  <span className="text-muted-foreground">{count}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

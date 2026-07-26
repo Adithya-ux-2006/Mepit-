@@ -370,7 +370,7 @@ export function runFormulaEngine(
     lighting_load_w,
     dg_capacity_kva,
     dg_loading_factor,
-    annual_energy_kwh,
+    annual_energy_kwh: annual_energy_kwh_col,
     hvac_cost,
     electrical_cost,
     dg_cost,
@@ -381,8 +381,14 @@ export function runFormulaEngine(
     fapa_cost,
     cctv_cost,
     total_mep_cost,
-    operating_hours,
+    operating_hours: operating_hours_col,
+    extended_fields,
   } = inputs;
+
+  // Energy fields: read from extended_fields if flat column is null
+  const ext = (extended_fields ?? {}) as Record<string, unknown>;
+  const annual_energy_kwh = annual_energy_kwh_col ?? (ext.annual_energy_kwh as number | null | undefined) ?? null;
+  const operating_hours = operating_hours_col ?? (ext.operating_hours as number | null | undefined) ?? null;
 
   const safeDiv = (num: number | null, den: number | null): number | null => {
     if (num == null || den == null || den === 0) return null;

@@ -34,9 +34,77 @@ export interface Project {
   version: number;
 }
 
+// All extended field keys (stored in extended_fields JSONB)
+export type ExtendedFieldKey =
+  // Area & Building Parameters (new)
+  | 'bua_substructure' | 'bua_superstructure' | 'building_heights'
+  | 'floor_to_floor_height' | 'office_false_ceiling' | 'corridor_false_ceiling'
+  | 'occupancy_hvac_bua' | 'occupancy_phe_bua'
+  | 'plant_room_bua_pct' | 'leasable_plant_room_bua_pct' | 'shaft_area_bua_pct'
+  | 'chiller_plant_room_location' | 'mep_package_value_crores' | 'lesson_learned'
+  // HVAC (new)
+  | 'occupancy_lobby' | 'design_temperature_office' | 'iaq_fresh_air'
+  | 'cooling_load_saleable' | 'cooling_load_superstructure' | 'cooling_load_carpet'
+  | 'diversity_considered' | 'type_of_chiller' | 'chiller_configuration'
+  | 'chiller_parameters' | 'refrigerant_used' | 'critical_room_hvac'
+  | 'ahu_scope' | 'cfm_sqft' | 'ahu_filtration_strategy'
+  | 'hvac_filtration_strategy' | 'primary_pump' | 'secondary_pump' | 'condenser_pump'
+  | 'cooling_towers_config' | 'cooling_tower_height'
+  | 'toilet_exhaust' | 'pantry_exhaust' | 'kitchen_exhaust'
+  | 'owc_exhaust' | 'basement_ventilation' | 'staircase_pressurization'
+  | 'lift_well_pressurization' | 'lift_lobby_pressurization' | 'ventilation_electrical_room'
+  | 'equipment_thermal_load' | 'smoke_extraction_tenants' | 'server_load' | 'mode_server_cooling'
+  | 'hvac_package_cost_lumpsum'
+  // Electrical & DG (new)
+  | 'power_supply_sources' | 'tenant_power_va_sqft' | 'tenant_power_incl_ahu_va'
+  | 'common_area_power_va' | 'total_va_sqft_carpet' | 'total_va_sqft_saleable'
+  | 'va_sqft_bua_tenant' | 'va_sqft_bua_common_ex_ev' | 'va_sqft_bua_ev' | 'va_sqft_bua_total'
+  | 'baseline_epi' | 'epi_superstructure' | 'epi_bua'
+  | 'transformer_redundancy' | 'transformer_sizing_calc' | 'transformer_loading_pct'
+  | 'transformer_sizing_after_loading' | 'transformer_capacity_diversity'
+  | 'va_sqft_transformer'
+  | 'dg_redundancy' | 'dg_load_va_saleable' | 'dg_load_va_bua'
+  | 'dg_capacity_calc' | 'dg_loading_pct' | 'va_sqft_dg_capacity'
+  | 'dg_set_kva_after_loading' | 'dg_capacity_selected'
+  | 'hsd_capacity' | 'hsd_backup'
+  | 'bus_riser_sizing' | 'tenant_isolator_sizing' | 'bus_riser_n1'
+  | 'earthing_lv' | 'earthing_elv' | 'lps'
+  | 'electrical_risers' | 'it_risers' | 'ups_elevator'
+  | 'solar_panel_capacity' | 'solar_panel_pct'
+  | 'car_park_charging' | 'car_charging_pct'
+  | 'electrical_package_cost_lumpsum' | 'dg_package_cost_lumpsum'
+  // Plumbing (new)
+  | 'water_supply_drainage' | 'hydropneumatic_or_gravity'
+  | 'ugt_storage_days' | 'flood_mitigation' | 'rain_water_harvesting'
+  | 'tenant_exec_washroom' | 'stp_kld' | 'stp_type'
+  | 'domestic_water_ugt' | 'domestic_water_oht'
+  | 'flushing_water_ugt' | 'flushing_water_oht'
+  | 'owc_capacity' | 'owc_cost_rs_sqft'
+  | 'phe_package_cost_lumpsum'
+  // Fire Fighting (new)
+  | 'ff_pumps_system' | 'express_risers' | 'intermediate_tank'
+  | 'drencher_podium' | 'drencher_typical'
+  | 'ff_package_cost_lumpsum'
+  // FAPA (new)
+  | 'fapa_technology' | 'fapa_addressable' | 'fapa_cables'
+  | 'fapa_package_cost_lumpsum'
+  // CCTV (new)
+  | 'cctv_type' | 'security_access_control'
+  | 'cctv_package_cost_lumpsum'
+  // Glass Façade (new)
+  | 'glazing_u_value' | 'vlt' | 'glazing_shgc'
+  | 'wall_u_value' | 'roof_u_value'
+  | 'spandrel_u_value' | 'spandrel_height'
+  | 'punched_windows' | 'wwr' | 'facade_power_controller'
+  // Sustainability
+  | 'sustainability_certification'
+  // Energy (moved from flat columns to extended_fields)
+  | 'annual_energy_kwh' | 'operating_hours';
+
 export interface ProjectInputs {
   id: string;
   project_id: string;
+  // Existing flat columns (kept for KPI formula compatibility)
   plant_room_area: number | null;
   leasable_plant_room_area: number | null;
   shaft_area: number | null;
@@ -54,7 +122,7 @@ export interface ProjectInputs {
   lighting_load_w: number | null;
   dg_capacity_kva: number | null;
   dg_loading_factor: number | null;
-  annual_energy_kwh: number | null;
+  annual_energy_kwh: number | null; // kept for backward compat, also in extended_fields
   hvac_cost: number | null;
   electrical_cost: number | null;
   dg_cost: number | null;
@@ -66,7 +134,7 @@ export interface ProjectInputs {
   cctv_cost: number | null;
   total_mep_cost: number | null;
   extended_fields: Record<string, unknown>;
-  operating_hours: number | null;
+  operating_hours: number | null; // kept for backward compat, also in extended_fields
 }
 
 export interface KpiFormula {
@@ -165,6 +233,8 @@ export interface ProjectFormData {
   cctv_cost: number | null;
   total_mep_cost: number | null;
   operating_hours: number | null;
+  // Extended fields (stored in extended_fields JSONB)
+  [key: string]: unknown;
 }
 
 export interface RecommendationRequest {

@@ -27,64 +27,39 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import {
   COST_FIELDS,
   ENGINEERING_SERVICE_GROUPS,
-  HVAC_STRATEGY_OPTIONS,
   PROJECT_INPUT_FIELD_META,
   TOTAL_COST_FIELDS,
+  getComputedFields,
+  flattenExtendedFields,
+  collectExtendedFields,
+  isExtendedField,
   type ProjectInputField,
+  type ComputedFieldDef,
+  type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { getRequiredValidationErrors } from '@/lib/validation-engine';
 
+// All fields the form manages (existing columns + extended fields)
+type AllFormFields = string;
+
 interface FormState {
+  // Project identity
   project_name: string;
   typology: string;
   location_city: string;
   location_state: string;
   project_year: number;
+  // Area fields (moved from Project Identity to Area & Building section)
   built_up_area: number | null;
   carpet_area: number | null;
   saleable_area: number | null;
   leasable_area: number | null;
-  plant_room_area: number | null;
-  leasable_plant_room_area: number | null;
-  shaft_area: number | null;
-  office_area: number | null;
-  fb_area: number | null;
-  gross_area: number | null;
-  occupancy_density_office: number | null;
-  occupancy_density_fb: number | null;
-  total_tr: number | null;
-  total_airflow_cfm: number | null;
-  hvac_strategy: string;
-  transformer_capacity_kva: number | null;
-  tenant_power_kva: number | null;
-  common_area_power_kva: number | null;
-  lighting_load_w: number | null;
-  dg_capacity_kva: number | null;
-  dg_loading_factor: number | null;
-  annual_energy_kwh: number | null;
-  hvac_cost: number | null;
-  electrical_cost: number | null;
-  dg_cost: number | null;
-  fire_fighting_cost: number | null;
-  stp_cost: number | null;
-  phe_cost: number | null;
-  bms_cost: number | null;
-  fapa_cost: number | null;
-  cctv_cost: number | null;
-  total_mep_cost: number | null;
-  operating_hours: number | null;
+  // All design parameter fields (existing columns + extended fields, all flat)
+  [key: string]: unknown;
 }
 
-const defaultForm: FormState = {
-  project_name: '',
-  typology: '',
-  location_city: '',
-  location_state: '',
-  project_year: new Date().getFullYear(),
-  built_up_area: null,
-  carpet_area: null,
-  saleable_area: null,
-  leasable_area: null,
+// Defaults for all known fields
+const EXISTING_FIELD_DEFAULTS: Record<string, unknown> = {
   plant_room_area: null,
   leasable_plant_room_area: null,
   shaft_area: null,
@@ -116,6 +91,19 @@ const defaultForm: FormState = {
   operating_hours: 3000,
 };
 
+const defaultForm: FormState = {
+  project_name: '',
+  typology: '',
+  location_city: '',
+  location_state: '',
+  project_year: new Date().getFullYear(),
+  built_up_area: null,
+  carpet_area: null,
+  saleable_area: null,
+  leasable_area: null,
+  ...EXISTING_FIELD_DEFAULTS,
+};
+
 const typologies = [
   'Office', 'Retail', 'Hospitality', 'Mixed Use',
   'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional',
@@ -144,38 +132,22 @@ function buildProjectFieldErrors(form: FormState): Record<string, string> {
 }
 
 function buildSubmitValidationData(data: FormState): Record<string, unknown> {
-  return {
+  const result: Record<string, unknown> = {
     project_name: data.project_name,
     typology: data.typology,
     built_up_area: data.built_up_area,
     carpet_area: data.carpet_area,
     saleable_area: data.saleable_area,
     leasable_area: data.leasable_area,
-    plant_room_area: data.plant_room_area,
-    leasable_plant_room_area: data.leasable_plant_room_area,
-    shaft_area: data.shaft_area,
-    occupancy_density_office: data.occupancy_density_office,
-    occupancy_density_fb: data.occupancy_density_fb,
-    total_tr: data.total_tr,
-    total_airflow_cfm: data.total_airflow_cfm,
-    operating_hours: data.operating_hours,
-    tenant_power_kva: data.tenant_power_kva,
-    common_area_power_kva: data.common_area_power_kva,
-    transformer_capacity_kva: data.transformer_capacity_kva,
-    dg_capacity_kva: data.dg_capacity_kva,
-    dg_loading_factor: data.dg_loading_factor,
-    annual_energy_kwh: data.annual_energy_kwh,
-    hvac_cost: data.hvac_cost,
-    electrical_cost: data.electrical_cost,
-    dg_cost: data.dg_cost,
-    fire_fighting_cost: data.fire_fighting_cost,
-    stp_cost: data.stp_cost,
-    phe_cost: data.phe_cost,
-    bms_cost: data.bms_cost,
-    fapa_cost: data.fapa_cost,
-    cctv_cost: data.cctv_cost,
-    total_mep_cost: data.total_mep_cost,
   };
+  // Add all design parameter fields
+  for (const key of Object.keys(data)) {
+    if (!['project_name', 'typology', 'location_city', 'location_state', 'project_year',
+      'built_up_area', 'carpet_area', 'saleable_area', 'leasable_area'].includes(key)) {
+      result[key] = data[key];
+    }
+  }
+  return result;
 }
 
 function Section({
@@ -216,6 +188,7 @@ function NumField({
   min,
   error,
   decimals,
+  readOnly,
 }: {
   label: string;
   unit: string;
@@ -225,37 +198,40 @@ function NumField({
   min?: number;
   error?: string;
   decimals?: number;
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground">
         {label} {unit ? <span className="text-[10px]">({unit})</span> : null}
+        {readOnly && <span className="text-[10px] text-blue-500 ml-1">(computed)</span>}
       </Label>
       <Input
         type="number"
         value={value ?? ''}
         onChange={(e) => {
+          if (readOnly) return;
           const rawValue = e.target.value;
           if (rawValue === '') {
             onChange(null);
             return;
           }
-
           if (min != null && rawValue.startsWith('-')) return;
           if (decimals != null) {
             const [, decimalPart = ''] = rawValue.split('.');
             if (decimalPart.length > decimals) return;
           }
-
           const nextValue = Number(rawValue);
           if (Number.isNaN(nextValue)) return;
           if (min != null && nextValue < min) return;
           onChange(nextValue);
         }}
-        placeholder={placeholder}
+        placeholder={readOnly ? '—' : placeholder}
         min={min}
         step={decimals != null ? `0.${'0'.repeat(Math.max(decimals - 1, 0))}1` : undefined}
-        className={`h-8 text-sm ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
+        className={`h-8 text-sm ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''} ${readOnly ? 'bg-muted/50 cursor-not-allowed' : ''}`}
+        readOnly={readOnly}
+        tabIndex={readOnly ? -1 : 0}
       />
       <FieldError error={error} />
     </div>
@@ -295,6 +271,34 @@ function SelectField({
   );
 }
 
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  error,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  error?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`h-8 text-sm ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
+      />
+      <FieldError error={error} />
+    </div>
+  );
+}
+
 function CreateProjectForm() {
   const router = useRouter();
   const { user } = useAuth();
@@ -312,7 +316,7 @@ function CreateProjectForm() {
   const [existingProjectId, setExistingProjectId] = useState<string | null>(editId);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
 
-  const update = useCallback(<K extends keyof FormState>(field: K, value: FormState[K]) => {
+  const update = useCallback(<K extends string>(field: K, value: unknown) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setSaveMessage('');
     setError('');
@@ -329,8 +333,9 @@ function CreateProjectForm() {
   const sumOfCosts = costFields.reduce((sum, field) => sum + (Number(form[field]) || 0), 0);
 
   const costWarning = useMemo(() => {
-    if (form.total_mep_cost != null && sumOfCosts > 0 && Math.abs(form.total_mep_cost - sumOfCosts) > 1) {
-      return `Sum of package costs (${sumOfCosts.toFixed(2)} ₹/Sq.ft) does not match Total MEP Cost (${form.total_mep_cost.toFixed(2)} ₹/Sq.ft)`;
+    const totalCost = Number(form.total_mep_cost) || 0;
+    if (totalCost > 0 && sumOfCosts > 0 && Math.abs(totalCost - sumOfCosts) > 1) {
+      return `Sum of package costs (${sumOfCosts.toFixed(2)} ₹/Sq.ft) does not match Total MEP Cost (${totalCost.toFixed(2)} ₹/Sq.ft)`;
     }
     return '';
   }, [form.total_mep_cost, sumOfCosts]);
@@ -342,6 +347,9 @@ function CreateProjectForm() {
     }
     return next;
   }, [projectFieldErrors, validationErrors]);
+
+  // Compute derived fields for live display
+  const computedFields = useMemo(() => getComputedFields(form), [form]);
 
   const runValidation = useCallback(async (data: FormState) => {
     const errors = await validateProjectInputs(buildSubmitValidationData(data));
@@ -358,7 +366,7 @@ function CreateProjectForm() {
         if (!project) return;
         if (project.status !== 'draft' && project.status !== 'rejected') return;
 
-        setForm({
+        const formData: FormState = {
           project_name: project.project_name,
           typology: project.typology,
           location_city: project.location_city,
@@ -368,6 +376,7 @@ function CreateProjectForm() {
           carpet_area: project.carpet_area,
           saleable_area: project.saleable_area,
           leasable_area: project.leasable_area,
+          // Existing flat columns
           plant_room_area: inputs?.plant_room_area ?? null,
           leasable_plant_room_area: inputs?.leasable_plant_room_area ?? null,
           shaft_area: inputs?.shaft_area ?? null,
@@ -397,7 +406,14 @@ function CreateProjectForm() {
           cctv_cost: inputs?.cctv_cost ?? null,
           total_mep_cost: inputs?.total_mep_cost ?? null,
           operating_hours: inputs?.operating_hours ?? 3000,
-        });
+        };
+
+        // Hydrate extended fields into flat form state
+        if (inputs?.extended_fields) {
+          flattenExtendedFields(inputs.extended_fields as Record<string, unknown>, formData);
+        }
+
+        setForm(formData);
         setExistingProjectId(project.id);
         setRejectionReason(project.status === 'rejected' ? project.rejection_reason : null);
       })
@@ -448,36 +464,42 @@ function CreateProjectForm() {
       const projectId = project.id;
       setExistingProjectId(projectId);
 
+      // Collect extended fields for persistence
+      const extFields = collectExtendedFields(form);
+
       await upsertProjectInputs(projectId, {
-        plant_room_area: form.plant_room_area,
-        leasable_plant_room_area: form.leasable_plant_room_area,
-        shaft_area: form.shaft_area,
-        office_area: form.office_area,
-        fb_area: form.fb_area,
-        gross_area: form.gross_area,
-        occupancy_density_office: form.occupancy_density_office,
-        occupancy_density_fb: form.occupancy_density_fb,
-        total_tr: form.total_tr,
-        total_airflow_cfm: form.total_airflow_cfm,
-        hvac_strategy: form.hvac_strategy || null,
-        transformer_capacity_kva: form.transformer_capacity_kva,
-        tenant_power_kva: form.tenant_power_kva,
-        common_area_power_kva: form.common_area_power_kva,
-        lighting_load_w: form.lighting_load_w,
-        dg_capacity_kva: form.dg_capacity_kva,
-        dg_loading_factor: form.dg_loading_factor,
-        annual_energy_kwh: form.annual_energy_kwh,
-        hvac_cost: form.hvac_cost,
-        electrical_cost: form.electrical_cost,
-        dg_cost: form.dg_cost,
-        fire_fighting_cost: form.fire_fighting_cost,
-        stp_cost: form.stp_cost,
-        phe_cost: form.phe_cost,
-        bms_cost: form.bms_cost,
-        fapa_cost: form.fapa_cost,
-        cctv_cost: form.cctv_cost,
-        total_mep_cost: form.total_mep_cost,
-        operating_hours: form.operating_hours,
+        // Existing flat columns
+        plant_room_area: (form.plant_room_area as number | null) ?? null,
+        leasable_plant_room_area: (form.leasable_plant_room_area as number | null) ?? null,
+        shaft_area: (form.shaft_area as number | null) ?? null,
+        office_area: (form.office_area as number | null) ?? null,
+        fb_area: (form.fb_area as number | null) ?? null,
+        gross_area: (form.gross_area as number | null) ?? null,
+        occupancy_density_office: (form.occupancy_density_office as number | null) ?? null,
+        occupancy_density_fb: (form.occupancy_density_fb as number | null) ?? null,
+        total_tr: (form.total_tr as number | null) ?? null,
+        total_airflow_cfm: (form.total_airflow_cfm as number | null) ?? null,
+        hvac_strategy: (form.hvac_strategy as string) || null,
+        transformer_capacity_kva: (form.transformer_capacity_kva as number | null) ?? null,
+        tenant_power_kva: (form.tenant_power_kva as number | null) ?? null,
+        common_area_power_kva: (form.common_area_power_kva as number | null) ?? null,
+        lighting_load_w: (form.lighting_load_w as number | null) ?? null,
+        dg_capacity_kva: (form.dg_capacity_kva as number | null) ?? null,
+        dg_loading_factor: (form.dg_loading_factor as number | null) ?? null,
+        annual_energy_kwh: (form.annual_energy_kwh as number | null) ?? null,
+        hvac_cost: (form.hvac_cost as number | null) ?? null,
+        electrical_cost: (form.electrical_cost as number | null) ?? null,
+        dg_cost: (form.dg_cost as number | null) ?? null,
+        fire_fighting_cost: (form.fire_fighting_cost as number | null) ?? null,
+        stp_cost: (form.stp_cost as number | null) ?? null,
+        phe_cost: (form.phe_cost as number | null) ?? null,
+        bms_cost: (form.bms_cost as number | null) ?? null,
+        fapa_cost: (form.fapa_cost as number | null) ?? null,
+        cctv_cost: (form.cctv_cost as number | null) ?? null,
+        total_mep_cost: (form.total_mep_cost as number | null) ?? null,
+        operating_hours: (form.operating_hours as number | null) ?? 3000,
+        // Extended fields
+        extended_fields: extFields,
       });
 
       if (status === 'submitted') {
@@ -501,19 +523,49 @@ function CreateProjectForm() {
     }
   };
 
-  const renderProjectInputField = (field: ProjectInputField) => {
+  const renderField = (field: ProjectInputField, computedMap?: Map<string, ComputedFieldDef>) => {
     const meta = PROJECT_INPUT_FIELD_META[field];
+    if (!meta) return null;
     const errorMessage = fieldErrorMap[field];
+
+    // Check if this is a computed field
+    const computed = computedMap?.get(field);
+    if (computed) {
+      const val = computed.compute(form);
+      return (
+        <NumField
+          key={field}
+          label={computed.label}
+          unit={computed.unit}
+          value={val}
+          onChange={() => {}}
+          readOnly
+        />
+      );
+    }
 
     if (meta.kind === 'select') {
       return (
         <SelectField
           key={field}
           label={meta.label}
-          value={form[field] as string}
-          onChange={(value) => update(field as keyof FormState, value as FormState[keyof FormState])}
-          options={meta.options ?? HVAC_STRATEGY_OPTIONS}
+          value={(form[field] as string) ?? ''}
+          onChange={(value) => update(field, value)}
+          options={meta.options ?? []}
           placeholder="Select..."
+          error={errorMessage}
+        />
+      );
+    }
+
+    if (meta.kind === 'text') {
+      return (
+        <TextField
+          key={field}
+          label={meta.label}
+          value={(form[field] as string) ?? ''}
+          onChange={(value) => update(field, value)}
+          placeholder={meta.placeholder}
           error={errorMessage}
         />
       );
@@ -524,13 +576,37 @@ function CreateProjectForm() {
         key={field}
         label={meta.label}
         unit={meta.unit ?? ''}
-        value={form[field] as number | null}
-        onChange={(value) => update(field as keyof FormState, value as FormState[keyof FormState])}
+        value={(form[field] as number | null) ?? null}
+        onChange={(value) => update(field, value)}
         placeholder={meta.placeholder}
         min={meta.min}
         decimals={meta.decimals}
         error={errorMessage}
       />
+    );
+  };
+
+  const renderGroup = (group: EngineeringServiceGroup, computedMap: Map<string, ComputedFieldDef>) => {
+    const allFields = [
+      ...group.fields,
+      ...(group.subGroups?.flatMap((sg) => sg.fields) ?? []),
+    ];
+    const computedInGroup = allFields.filter((f) => computedMap.has(f));
+
+    return (
+      <Section key={group.key} title={group.title} defaultOpen={group.key === 'area-building' || group.key === 'hvac'}>
+        <div className="grid grid-cols-2 gap-4">
+          {group.fields.map((field) => renderField(field, computedMap))}
+        </div>
+        {group.subGroups?.map((subGroup) => (
+          <div key={subGroup.key} className="mt-4 border-l-2 border-muted pl-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{subGroup.title}</p>
+            <div className="grid grid-cols-2 gap-4">
+              {subGroup.fields.map((field) => renderField(field, computedMap))}
+            </div>
+          </div>
+        ))}
+      </Section>
     );
   };
 
@@ -545,12 +621,15 @@ function CreateProjectForm() {
   const requiredErrors = getRequiredValidationErrors(validationErrors);
   const advisoryErrors = validationErrors.filter((entry) => entry.rule_type !== 'required');
 
+  // Build computed fields map for quick lookup
+  const computedMap = new Map(computedFields.map((c) => [c.field, c]));
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : 'New Project'}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {existingProjectId ? 'Update project details and resubmit for review.' : 'Enter project details from the Grune Basis Requirements workbook.'}
+          {existingProjectId ? 'Update project details and resubmit for review.' : 'Enter project details from the MEP Services Comparison workbook.'}
         </p>
       </div>
 
@@ -566,6 +645,7 @@ function CreateProjectForm() {
         onSubmit={(e) => { e.preventDefault(); persist('draft'); }}
         className="space-y-4"
       >
+        {/* Section 1: Project Identity (truncated — area fields moved to Section 2) */}
         <Section title="1. Project Identity">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -612,54 +692,56 @@ function CreateProjectForm() {
               min={1980}
               error={fieldErrorMap.project_year}
             />
-            <NumField
-              label="Built Up Area"
-              unit="sqft"
-              value={form.built_up_area}
-              onChange={(value) => update('built_up_area', value)}
-              min={0}
-              error={fieldErrorMap.built_up_area}
-            />
-            <NumField
-              label="Carpet Area"
-              unit="sqft"
-              value={form.carpet_area}
-              onChange={(value) => update('carpet_area', value)}
-              min={0}
-              error={fieldErrorMap.carpet_area}
-            />
-            <NumField
-              label="Saleable Area"
-              unit="sqft"
-              value={form.saleable_area}
-              onChange={(value) => update('saleable_area', value)}
-              min={0}
-              error={fieldErrorMap.saleable_area}
-            />
-            <NumField
-              label="Leasable Area"
-              unit="sqft"
-              value={form.leasable_area}
-              onChange={(value) => update('leasable_area', value)}
-              min={0}
-              error={fieldErrorMap.leasable_area}
-            />
           </div>
         </Section>
 
+        {/* Section 2: Design Parameters — all groups from config */}
         <Section title="2. Design Parameters">
           <div className="space-y-4">
-            {ENGINEERING_SERVICE_GROUPS.map((group) => (
-              <Section key={group.key} title={group.title} defaultOpen={group.key === 'area-schedule' || group.key === 'hvac'}>
-                <div className="grid grid-cols-2 gap-4">
-                  {group.fields.map((field) => renderProjectInputField(field))}
-                </div>
-              </Section>
-            ))}
+            {/* Prepend Area & Building fields that are on the `projects` table */}
+            <Section title="Area & Building Parameters" defaultOpen>
+              <div className="grid grid-cols-2 gap-4">
+                <NumField
+                  label="Total BUA"
+                  unit="sqft"
+                  value={form.built_up_area}
+                  onChange={(value) => update('built_up_area', value)}
+                  min={0}
+                  error={fieldErrorMap.built_up_area}
+                />
+                <NumField
+                  label="Carpet Area"
+                  unit="sqft"
+                  value={form.carpet_area}
+                  onChange={(value) => update('carpet_area', value)}
+                  min={0}
+                  error={fieldErrorMap.carpet_area}
+                />
+                <NumField
+                  label="Saleable / Leasable Area"
+                  unit="sqft"
+                  value={form.saleable_area}
+                  onChange={(value) => update('saleable_area', value)}
+                  min={0}
+                  error={fieldErrorMap.saleable_area}
+                />
+                <NumField
+                  label="Leasable Area"
+                  unit="sqft"
+                  value={form.leasable_area}
+                  onChange={(value) => update('leasable_area', value)}
+                  min={0}
+                  error={fieldErrorMap.leasable_area}
+                />
+              </div>
+            </Section>
+
+            {/* Render all config groups */}
+            {ENGINEERING_SERVICE_GROUPS.map((group) => renderGroup(group, computedMap))}
 
             <Section title="Total" defaultOpen>
               <div className="grid grid-cols-2 gap-4">
-                {TOTAL_COST_FIELDS.map((field) => renderProjectInputField(field))}
+                {TOTAL_COST_FIELDS.map((field) => renderField(field, computedMap))}
               </div>
 
               {sumOfCosts > 0 && (

@@ -21,7 +21,11 @@ import {
   PROJECT_INPUT_FIELD_META,
   TOTAL_COST_FIELDS,
   formatProjectInputValue,
+  isExtendedField,
+  flattenExtendedFields,
+  collectExtendedFields,
   type ProjectInputField,
+  type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { evaluateValidationRules } from '@/lib/validation-engine';
 
@@ -30,6 +34,7 @@ interface OutputWithKpi extends ProjectKpiOutput {
 }
 
 const editableInputKeys = new Set<ProjectInputField>([
+  // Existing flat columns
   'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
   'office_area', 'fb_area', 'gross_area',
   'occupancy_density_office', 'occupancy_density_fb',
@@ -39,6 +44,49 @@ const editableInputKeys = new Set<ProjectInputField>([
   'annual_energy_kwh', 'hvac_cost', 'electrical_cost', 'dg_cost',
   'fire_fighting_cost', 'stp_cost', 'phe_cost', 'bms_cost',
   'fapa_cost', 'cctv_cost', 'total_mep_cost', 'operating_hours',
+  // Extended fields (editable)
+  'bua_substructure', 'bua_superstructure', 'building_heights',
+  'floor_to_floor_height', 'office_false_ceiling', 'corridor_false_ceiling',
+  'occupancy_hvac_bua', 'occupancy_phe_bua',
+  'chiller_plant_room_location', 'lesson_learned',
+  'occupancy_lobby', 'design_temperature_office', 'iaq_fresh_air',
+  'diversity_considered', 'type_of_chiller', 'chiller_configuration',
+  'chiller_parameters', 'refrigerant_used', 'critical_room_hvac',
+  'ahu_scope', 'cfm_sqft', 'ahu_filtration_strategy',
+  'hvac_filtration_strategy', 'primary_pump', 'secondary_pump', 'condenser_pump',
+  'cooling_towers_config', 'cooling_tower_height',
+  'toilet_exhaust', 'pantry_exhaust', 'kitchen_exhaust', 'owc_exhaust',
+  'basement_ventilation', 'staircase_pressurization', 'lift_well_pressurization',
+  'lift_lobby_pressurization', 'ventilation_electrical_room',
+  'equipment_thermal_load', 'smoke_extraction_tenants', 'server_load', 'mode_server_cooling',
+  'hvac_package_cost_lumpsum',
+  'power_supply_sources', 'tenant_power_va_sqft', 'tenant_power_incl_ahu_va',
+  'common_area_power_va',
+  'baseline_epi', 'epi_superstructure', 'epi_bua',
+  'transformer_redundancy', 'transformer_sizing_calc', 'transformer_loading_pct',
+  'transformer_capacity_diversity',
+  'dg_redundancy', 'dg_capacity_calc', 'dg_loading_pct', 'dg_capacity_selected',
+  'hsd_capacity', 'hsd_backup',
+  'bus_riser_sizing', 'tenant_isolator_sizing', 'bus_riser_n1',
+  'earthing_lv', 'earthing_elv', 'lps',
+  'electrical_risers', 'it_risers', 'ups_elevator',
+  'solar_panel_capacity', 'solar_panel_pct',
+  'car_park_charging', 'car_charging_pct',
+  'electrical_package_cost_lumpsum', 'dg_package_cost_lumpsum',
+  'water_supply_drainage', 'hydropneumatic_or_gravity',
+  'ugt_storage_days', 'flood_mitigation', 'rain_water_harvesting',
+  'tenant_exec_washroom', 'stp_kld', 'stp_type',
+  'domestic_water_ugt', 'domestic_water_oht',
+  'flushing_water_ugt', 'flushing_water_oht',
+  'owc_capacity', 'owc_cost_rs_sqft', 'phe_package_cost_lumpsum',
+  'ff_pumps_system', 'express_risers', 'intermediate_tank',
+  'drencher_podium', 'drencher_typical', 'ff_package_cost_lumpsum',
+  'fapa_technology', 'fapa_addressable', 'fapa_cables', 'fapa_package_cost_lumpsum',
+  'cctv_type', 'security_access_control', 'cctv_package_cost_lumpsum',
+  'glazing_u_value', 'vlt', 'glazing_shgc',
+  'wall_u_value', 'roof_u_value', 'spandrel_u_value', 'spandrel_height',
+  'punched_windows', 'wwr', 'facade_power_controller',
+  'sustainability_certification',
 ]);
 
 function getBenchmark(
@@ -201,7 +249,16 @@ export default function ProjectDetailPage() {
     outputsByCategory[cat].push(o);
   }
 
-  const groupedInputFields = [...ENGINEERING_SERVICE_GROUPS, { key: 'total', title: 'Total', fields: TOTAL_COST_FIELDS }];
+  const groupedInputFields: (EngineeringServiceGroup & { fields: readonly ProjectInputField[] })[] = [
+    ...ENGINEERING_SERVICE_GROUPS.map((g) => ({
+      ...g,
+      fields: [
+        ...g.fields,
+        ...(g.subGroups?.flatMap((sg) => sg.fields) ?? []),
+      ] as readonly ProjectInputField[],
+    })),
+    { key: 'total', title: 'Total', fields: TOTAL_COST_FIELDS },
+  ];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -425,7 +482,16 @@ export default function ProjectDetailPage() {
                     setSaving(true);
                     setSaveError('');
                     try {
-                      await upsertProjectInputs(id, editForm);
+                      // Collect extended fields for persistence
+                      const extFields = collectExtendedFields(editForm);
+                      // Separate flat column fields from extended fields
+                      const flatFields: Record<string, unknown> = {};
+                      for (const [k, v] of Object.entries(editForm)) {
+                        if (!isExtendedField(k as ProjectInputField)) {
+                          flatFields[k] = v;
+                        }
+                      }
+                      await upsertProjectInputs(id, { ...flatFields, extended_fields: extFields });
                       await deleteProjectKpiOutputs(id);
                       const [formulas, updatedInputs] = await Promise.all([
                         getKpiFormulas(),
@@ -462,7 +528,10 @@ export default function ProjectDetailPage() {
                 <Button size="sm" variant="outline" onClick={() => {
                   const form: Record<string, unknown> = {};
                   for (const [k, v] of Object.entries(inputs)) {
-                    if (editableInputKeys.has(k as ProjectInputField)) {
+                    if (k === 'extended_fields') {
+                      // Flatten extended fields into the edit form
+                      flattenExtendedFields(v as Record<string, unknown>, form);
+                    } else if (editableInputKeys.has(k as ProjectInputField)) {
                       form[k] = typeof v === 'number' && v != null ? Number(v) : v;
                     }
                   }
@@ -478,7 +547,7 @@ export default function ProjectDetailPage() {
             <div className="space-y-4 text-sm">
               {groupedInputFields.map((group) => {
                 const visibleFields = group.fields.filter((field) => {
-                  const value = editing ? editForm[field] : inputs[field];
+                  const value = editing ? editForm[field] : (inputs as unknown as Record<string, unknown>)[field];
                   return editing || (value != null && value !== '');
                 });
 
@@ -488,8 +557,8 @@ export default function ProjectDetailPage() {
                   <div key={group.key} className="space-y-3">
                     <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{group.title}</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {visibleFields.map((field) => {
-                        const value = editing ? editForm[field] : inputs[field];
+                {visibleFields.map((field) => {
+                        const value = editing ? editForm[field] : (inputs as unknown as Record<string, unknown>)[field];
                         const meta = PROJECT_INPUT_FIELD_META[field];
                         return editing ? (
                           <div key={field} className="space-y-1">

@@ -39,6 +39,7 @@ const currencyRateNumber = z.number().min(0).refine(
 ).nullable().optional();
 
 export const projectInputsSchema = z.object({
+  // Existing flat columns
   plant_room_area: nonNegativeNullableNumber,
   leasable_plant_room_area: nonNegativeNullableNumber,
   shaft_area: nonNegativeNullableNumber,
@@ -68,6 +69,8 @@ export const projectInputsSchema = z.object({
   cctv_cost: currencyRateNumber,
   total_mep_cost: currencyRateNumber,
   operating_hours: nonNegativeNullableNumber,
+  // Extended fields (stored in extended_fields JSONB)
+  extended_fields: z.record(z.string(), z.unknown()).optional(),
 }).partial();
 
 export type ProjectInputsInput = z.infer<typeof projectInputsSchema>;

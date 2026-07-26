@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   BookOpen,
   ShieldAlert,
-  Activity,
   LogOut,
 } from 'lucide-react';
 
@@ -28,7 +27,6 @@ const adminItems = [
   { href: '/admin/approvals', label: 'Approvals', icon: ShieldCheck },
   { href: '/admin/kpi-library', label: 'KPI Library', icon: BookOpen },
   { href: '/admin/validation-rules', label: 'Validation Rules', icon: ShieldAlert },
-  { href: '/admin/trust-dashboard', label: 'Trust Dashboard', icon: Activity },
 ];
 
 export function Navigation() {
