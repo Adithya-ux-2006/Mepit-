@@ -1,4 +1,5 @@
 import type { ProjectInputs, ExtendedFieldKey } from '@/types';
+import { z } from 'zod';
 
 // Existing column fields + extended field keys
 export type ProjectInputField = Exclude<keyof ProjectInputs, 'id' | 'project_id' | 'extended_fields'> | ExtendedFieldKey;
@@ -140,6 +141,7 @@ const EXTENDED_FIELD_META: Record<ExtendedFieldKey, ProjectInputFieldMeta> = {
   lesson_learned: { label: 'Lesson Learned', kind: 'text' },
 
   // HVAC
+  population: { label: 'Population', unit: 'persons', kind: 'computed' },
   occupancy_lobby: { label: 'Occupancy in Lobby', unit: 'sqft/person', kind: 'number', min: 0 },
   design_temperature_office: { label: 'Design Temperature Inside Office', unit: '°C', kind: 'number' },
   iaq_fresh_air: { label: 'IAQ / Fresh Air', kind: 'text' },
@@ -334,6 +336,20 @@ export function getComputedFields(inputs: Record<string, unknown>): ComputedFiel
     }},
 
     // HVAC
+    { field: 'population', label: 'Population', unit: 'persons', compute: () => {
+      const officeArea = Number(inputs.office_area) || 0;
+      const fbArea = Number(inputs.fb_area) || 0;
+      const officeDensity = Number(inputs.occupancy_density_office) || 0;
+      const fbDensity = Number(inputs.occupancy_density_fb) || 0;
+      // Match services.ts POPULATION: safeDiv returns null if denominator is 0,
+      // so if either density is 0, the corresponding term is null, and if both
+      // are null the result is null. When one is null and the other valid, the
+      // null term contributes 0 (consistent with services.ts: (officePop ?? 0) + (fbPop ?? 0)).
+      const officeTerm = officeDensity > 0 ? officeArea / officeDensity : 0;
+      const fbTerm = fbDensity > 0 ? fbArea / fbDensity : 0;
+      if (officeDensity <= 0 && fbDensity <= 0) return null;
+      return officeTerm + fbTerm;
+    }},
     { field: 'cooling_load_saleable', label: 'Cooling Load Density on Saleable', unit: 'sqft/TR', compute: () => safeDiv(saleable, totalTr) },
     { field: 'cooling_load_superstructure', label: 'Cooling Load Density on Superstructure', unit: 'sqft/TR', compute: () => safeDiv(superstructure, totalTr) },
     { field: 'cooling_load_carpet', label: 'Cooling Load Density on Carpet', unit: 'sqft/TR', compute: () => safeDiv(carpet, totalTr) },
@@ -375,7 +391,9 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
       'bua_substructure', 'bua_superstructure', 'building_heights',
       'floor_to_floor_height', 'office_false_ceiling', 'corridor_false_ceiling',
       'occupancy_hvac_bua', 'occupancy_phe_bua',
-      'chiller_plant_room_location', 'lesson_learned',
+      'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
+      'plant_room_bua_pct', 'leasable_plant_room_bua_pct', 'shaft_area_bua_pct',
+      'chiller_plant_room_location', 'mep_package_value_crores', 'lesson_learned',
     ],
   },
   // 2. HVAC
@@ -383,7 +401,7 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
     key: 'hvac',
     title: 'HVAC',
     fields: [
-      'occupancy_density_office', 'occupancy_density_fb', 'occupancy_lobby',
+      'occupancy_density_office', 'occupancy_density_fb', 'occupancy_lobby', 'population',
       'total_tr', 'total_airflow_cfm', 'hvac_strategy',
       'design_temperature_office', 'iaq_fresh_air',
       'diversity_considered',
@@ -568,3 +586,52 @@ export function collectExtendedFields(
   }
   return result;
 }
+
+// Build a Zod schema for extended_fields from EXTENDED_FIELD_META
+// Computed fields are stripped silently (never submitted by client)
+export function buildExtendedFieldsSchema(): z.ZodObject<Record<string, z.ZodOptional<z.ZodNullable<z.ZodTypeAny>>>> {
+  const shape: Record<string, z.ZodOptional<z.ZodNullable<z.ZodTypeAny>>> = {};
+  const computedKeys = new Set<string>();
+
+  for (const [key, meta] of Object.entries(EXTENDED_FIELD_META) as [string, ProjectInputFieldMeta][]) {
+    if (meta.kind === 'computed') {
+      computedKeys.add(key);
+      continue;
+    }
+    if (meta.kind === 'number') {
+      let numSchema = z.number();
+      if (meta.min != null) numSchema = numSchema.min(meta.min);
+      if (meta.max != null) numSchema = numSchema.max(meta.max);
+      if (meta.decimals != null) {
+        const multiplier = Math.pow(10, meta.decimals);
+        numSchema = numSchema.refine(
+          (v) => Number.isInteger(v * multiplier),
+          `Must have at most ${meta.decimals} decimal place${meta.decimals === 1 ? '' : 's'}`,
+        );
+      }
+      shape[key] = numSchema.nullable().optional();
+    } else if (meta.kind === 'select' && meta.options) {
+      shape[key] = z.enum(meta.options as unknown as [string, ...string[]]).nullable().optional();
+    } else {
+      shape[key] = z.string().nullable().optional();
+    }
+  }
+
+  return z.object(shape) as z.ZodObject<Record<string, z.ZodOptional<z.ZodNullable<z.ZodTypeAny>>>>;
+}
+
+// Strip computed fields from extended_fields payload (silent removal)
+export function stripComputedFields(
+  extendedFields: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extendedFields)) {
+    const meta = EXTENDED_FIELD_META[key as ExtendedFieldKey];
+    if (meta?.kind === 'computed') continue;
+    result[key] = value;
+  }
+  return result;
+}
+
+// Pre-built schema instance
+export const extendedFieldsSchema = buildExtendedFieldsSchema();

@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { extendedFieldsSchema, stripComputedFields } from '@/lib/project-input-config';
 
 // ============================================================================
 // PROJECT SCHEMAS
@@ -69,8 +70,8 @@ export const projectInputsSchema = z.object({
   cctv_cost: currencyRateNumber,
   total_mep_cost: currencyRateNumber,
   operating_hours: nonNegativeNullableNumber,
-  // Extended fields (stored in extended_fields JSONB)
-  extended_fields: z.record(z.string(), z.unknown()).optional(),
+  // Extended fields (stored in extended_fields JSONB) — validated from EXTENDED_FIELD_META
+  extended_fields: extendedFieldsSchema.optional(),
 }).partial();
 
 export type ProjectInputsInput = z.infer<typeof projectInputsSchema>;

@@ -698,7 +698,7 @@ function CreateProjectForm() {
         {/* Section 2: Design Parameters — all groups from config */}
         <Section title="2. Design Parameters">
           <div className="space-y-4">
-            {/* Prepend Area & Building fields that are on the `projects` table */}
+            {/* Area & Building Parameters — single merged section */}
             <Section title="Area & Building Parameters" defaultOpen>
               <div className="grid grid-cols-2 gap-4">
                 <NumField
@@ -718,7 +718,7 @@ function CreateProjectForm() {
                   error={fieldErrorMap.carpet_area}
                 />
                 <NumField
-                  label="Saleable / Leasable Area"
+                  label="Saleable Area"
                   unit="sqft"
                   value={form.saleable_area}
                   onChange={(value) => update('saleable_area', value)}
@@ -734,10 +734,16 @@ function CreateProjectForm() {
                   error={fieldErrorMap.leasable_area}
                 />
               </div>
+              {/* Config-driven area-building fields (no extra Section wrapper) */}
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                {(ENGINEERING_SERVICE_GROUPS.find((g) => g.key === 'area-building')?.fields ?? []).map(
+                  (field) => renderField(field, computedMap)
+                )}
+              </div>
             </Section>
 
-            {/* Render all config groups */}
-            {ENGINEERING_SERVICE_GROUPS.map((group) => renderGroup(group, computedMap))}
+            {/* Render all config groups EXCEPT area-building (handled above) */}
+            {ENGINEERING_SERVICE_GROUPS.filter((group) => group.key !== 'area-building').map((group) => renderGroup(group, computedMap))}
 
             <Section title="Total" defaultOpen>
               <div className="grid grid-cols-2 gap-4">

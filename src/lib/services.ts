@@ -11,6 +11,7 @@ import type {
 } from '@/types';
 import { validateInput, createProjectSchema, projectInputsSchema, upsertUserSchema, createAuditLogSchema } from '@/lib/validations';
 import { evaluateValidationRules } from '@/lib/validation-engine';
+import { stripComputedFields } from '@/lib/project-input-config';
 
 function getDb() {
   if (!supabase || !isConfigured) throw new Error('Supabase is not configured');
@@ -136,6 +137,10 @@ export async function upsertProjectInputs(
   projectId: string,
   data: Partial<ProjectInputs>
 ): Promise<ProjectInputs> {
+  // Strip computed fields from extended_fields before validation
+  if (data.extended_fields) {
+    data = { ...data, extended_fields: stripComputedFields(data.extended_fields as Record<string, unknown>) };
+  }
   const validation = validateInput(projectInputsSchema, data);
   if (!validation.success) throw new Error(`Validation failed: ${validation.errors.join('; ')}`);
   const db = getDb();

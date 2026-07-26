@@ -43,6 +43,7 @@ export type ExtendedFieldKey =
   | 'plant_room_bua_pct' | 'leasable_plant_room_bua_pct' | 'shaft_area_bua_pct'
   | 'chiller_plant_room_location' | 'mep_package_value_crores' | 'lesson_learned'
   // HVAC (new)
+  | 'population'
   | 'occupancy_lobby' | 'design_temperature_office' | 'iaq_fresh_air'
   | 'cooling_load_saleable' | 'cooling_load_superstructure' | 'cooling_load_carpet'
   | 'diversity_considered' | 'type_of_chiller' | 'chiller_configuration'
