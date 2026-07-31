@@ -17,6 +17,7 @@ import type {
   ValidationRule,
   AuditLog,
   User,
+  ProjectStage,
 } from '@/types';
 
 // Re-export pure functions that don't need DB access
@@ -110,6 +111,7 @@ export async function updateProject(
   data: {
     project_name?: string;
     typology?: string;
+    project_stage?: ProjectStage;
     location_city?: string;
     location_state?: string;
     project_year?: number;
@@ -137,6 +139,7 @@ export async function createProject(
   data: {
     project_name: string;
     typology: string;
+    project_stage: ProjectStage;
     location_city: string;
     location_state: string;
     project_year: number;

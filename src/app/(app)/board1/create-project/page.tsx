@@ -38,6 +38,8 @@ import {
   type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { getRequiredValidationErrors } from '@/lib/validation-engine';
+import { PROJECT_STAGES } from '@/lib/project-stages';
+import type { ProjectStage } from '@/types';
 
 // All fields the form manages (existing columns + extended fields)
 type AllFormFields = string;
@@ -46,6 +48,7 @@ interface FormState {
   // Project identity
   project_name: string;
   typology: string;
+  project_stage: string;
   location_city: string;
   location_state: string;
   project_year: number;
@@ -94,6 +97,7 @@ const EXISTING_FIELD_DEFAULTS: Record<string, unknown> = {
 const defaultForm: FormState = {
   project_name: '',
   typology: '',
+  project_stage: '',
   location_city: '',
   location_state: '',
   project_year: new Date().getFullYear(),
@@ -112,6 +116,7 @@ const typologies = [
 const projectFieldLabels: Record<string, string> = {
   project_name: 'Project Name',
   typology: 'Typology',
+  project_stage: 'Project Stage',
   location_city: 'City',
   project_year: 'Project Year',
   built_up_area: 'Built Up Area',
@@ -124,6 +129,7 @@ function buildProjectFieldErrors(form: FormState): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!form.project_name.trim()) errors.project_name = 'Project Name is required.';
   if (!form.typology) errors.typology = 'Typology is required.';
+  if (!form.project_stage) errors.project_stage = 'Project Stage is required.';
   if (!form.location_city.trim()) errors.location_city = 'City is required.';
   if (!Number.isInteger(form.project_year) || form.project_year < 1980 || form.project_year > 2100) {
     errors.project_year = 'Project Year must be between 1980 and 2100.';
@@ -142,7 +148,7 @@ function buildSubmitValidationData(data: FormState): Record<string, unknown> {
   };
   // Add all design parameter fields
   for (const key of Object.keys(data)) {
-    if (!['project_name', 'typology', 'location_city', 'location_state', 'project_year',
+    if (!['project_name', 'typology', 'project_stage', 'location_city', 'location_state', 'project_year',
       'built_up_area', 'carpet_area', 'saleable_area', 'leasable_area'].includes(key)) {
       result[key] = data[key];
     }
@@ -249,7 +255,7 @@ function SelectField({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: readonly string[];
+  options: readonly (string | { value: string; label: string })[];
   placeholder?: string;
   error?: string;
 }) {
@@ -262,9 +268,11 @@ function SelectField({
         className={`h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm ${error ? 'border-destructive' : 'border-input'}`}
       >
         <option value="">{placeholder ?? 'Select...'}</option>
-        {options.map((o) => (
-          <option key={o} value={o}>{o}</option>
-        ))}
+        {options.map((option) => {
+          const value = typeof option === 'string' ? option : option.value;
+          const label = typeof option === 'string' ? option : option.label;
+          return <option key={value} value={value}>{label}</option>;
+        })}
       </select>
       <FieldError error={error} />
     </div>
@@ -369,6 +377,7 @@ function CreateProjectForm() {
         const formData: FormState = {
           project_name: project.project_name,
           typology: project.typology,
+          project_stage: project.project_stage,
           location_city: project.location_city,
           location_state: project.location_state,
           project_year: project.project_year,
@@ -447,6 +456,7 @@ function CreateProjectForm() {
     const projectData = {
       project_name: form.project_name,
       typology: form.typology,
+      project_stage: form.project_stage as ProjectStage,
       location_city: form.location_city,
       location_state: form.location_state,
       project_year: form.project_year,
@@ -664,6 +674,14 @@ function CreateProjectForm() {
               onChange={(value) => update('typology', value)}
               options={typologies}
               error={fieldErrorMap.typology}
+            />
+            <SelectField
+              label="Project Stage *"
+              value={form.project_stage}
+              onChange={(value) => update('project_stage', value)}
+              options={PROJECT_STAGES}
+              placeholder="Select project stage..."
+              error={fieldErrorMap.project_stage}
             />
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">City *</Label>

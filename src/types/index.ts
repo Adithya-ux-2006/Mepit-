@@ -2,6 +2,18 @@ export type Role = 'contributor' | 'admin';
 
 export type ProjectStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
 
+export type ProjectStage =
+  | 'concept'
+  | 'schematic'
+  | 'design_development'
+  | 'tender'
+  | 'design_build_tender'
+  | 'post_tender'
+  | 'gfc'
+  | 'execution'
+  | 'final'
+  | 'completed';
+
 export type KpiCategory = 'Space Planning' | 'HVAC' | 'Electrical' | 'DG' | 'Sustainability' | 'Cost';
 
 export type RuleType = 'required' | 'min_value' | 'max_value' | 'cross_field';
@@ -18,6 +30,7 @@ export interface Project {
   id: string;
   project_name: string;
   typology: string;
+  project_stage: ProjectStage;
   location_city: string;
   location_state: string;
   project_year: number;
@@ -186,6 +199,7 @@ export interface AuditLog {
 export interface CreateProjectInput {
   project_name: string;
   typology: string;
+  project_stage: ProjectStage;
   location_city: string;
   location_state: string;
   project_year: number;
@@ -198,6 +212,7 @@ export interface CreateProjectInput {
 export interface ProjectFormData {
   project_name: string;
   typology: string;
+  project_stage: ProjectStage;
   location_city: string;
   location_state: string;
   project_year: number;

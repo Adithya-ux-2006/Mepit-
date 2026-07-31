@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { extendedFieldsSchema, stripComputedFields } from '@/lib/project-input-config';
+import { PROJECT_STAGE_VALUES } from '@/lib/project-stages';
 
 // ============================================================================
 // PROJECT SCHEMAS
@@ -18,6 +19,7 @@ export const createProjectSchema = z.object({
     'Office', 'Retail', 'Hospitality', 'Mixed Use',
     'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional',
   ]),
+  project_stage: z.enum(PROJECT_STAGE_VALUES),
   location_city: z.string().min(1, 'City is required').max(100),
   location_state: z.string().max(100).optional().default(''),
   project_year: z.number().int().min(1980).max(2100),

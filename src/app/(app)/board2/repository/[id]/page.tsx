@@ -28,6 +28,7 @@ import {
   type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { evaluateValidationRules } from '@/lib/validation-engine';
+import { getProjectStageLabel } from '@/lib/project-stages';
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
@@ -271,7 +272,7 @@ export default function ProjectDetailPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {project.typology} &middot; {project.location_city}, {project.location_state} &middot; {project.project_year}
+            {getProjectStageLabel(project.project_stage)} &middot; {project.typology} &middot; {project.location_city}, {project.location_state} &middot; {project.project_year}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -367,7 +368,11 @@ export default function ProjectDetailPage() {
           <CardTitle className="text-base">Project Summary</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground">Project Stage</span>
+              <p className="font-medium">{getProjectStageLabel(project.project_stage)}</p>
+            </div>
             <div>
               <span className="text-muted-foreground">BUA</span>
               <p className="font-medium">{project.built_up_area?.toLocaleString()} sqft</p>

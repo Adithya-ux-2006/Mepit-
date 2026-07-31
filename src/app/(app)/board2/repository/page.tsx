@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/card';
 import { Download, GitCompareArrows, Eye } from 'lucide-react';
 import type { Project, ProjectKpiOutput, KpiFormula } from '@/types';
+import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
@@ -32,6 +33,7 @@ export default function RepositoryPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterTypology, setFilterTypology] = useState('');
+  const [filterStage, setFilterStage] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
   const [filterYear, setFilterYear] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -70,12 +72,13 @@ export default function RepositoryPage() {
       )
         return false;
       if (filterTypology && p.typology !== filterTypology) return false;
+      if (filterStage && p.project_stage !== filterStage) return false;
       if (filterLocation && p.location_city !== filterLocation) return false;
       if (filterYear && String(p.project_year) !== filterYear) return false;
       if (filterStatus && p.status !== filterStatus) return false;
       return true;
     });
-  }, [projects, search, filterTypology, filterLocation, filterYear, filterStatus]);
+  }, [projects, search, filterTypology, filterStage, filterLocation, filterYear, filterStatus]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -124,12 +127,13 @@ export default function RepositoryPage() {
 
   const handleExport = () => {
     const rows: string[][] = [
-      ['Project Name', 'Typology', 'City', 'State', 'Year', 'BUA', 'Carpet Area', 'Status'],
+      ['Project Name', 'Typology', 'Project Stage', 'City', 'State', 'Year', 'BUA', 'Carpet Area', 'Status'],
     ];
     for (const p of filtered) {
       rows.push([
         p.project_name,
         p.typology,
+        getProjectStageLabel(p.project_stage),
         p.location_city,
         p.location_state,
         String(p.project_year),
@@ -211,7 +215,7 @@ export default function RepositoryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
         <div className="space-y-1">
           <Label htmlFor="search" className="text-xs">Search</Label>
           <Input
@@ -232,6 +236,20 @@ export default function RepositoryPage() {
             <option value="">All</option>
             {typologies.map((t) => (
               <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="filter-stage" className="text-xs">Project Stage</Label>
+          <select
+            id="filter-stage"
+            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            value={filterStage}
+            onChange={(e) => setFilterStage(e.target.value)}
+          >
+            <option value="">All</option>
+            {PROJECT_STAGES.map((stage) => (
+              <option key={stage.value} value={stage.value}>{stage.label}</option>
             ))}
           </select>
         </div>
@@ -291,6 +309,7 @@ export default function RepositoryPage() {
             <TableHead className="w-8" />
             <TableHead>Project Name</TableHead>
             <TableHead>Typology</TableHead>
+            <TableHead>Project Stage</TableHead>
             <TableHead>Location</TableHead>
             <TableHead>Built Up Area</TableHead>
             <TableHead>Year</TableHead>
@@ -300,7 +319,7 @@ export default function RepositoryPage() {
         <TableBody>
           {filtered.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                 No projects found.
               </TableCell>
             </TableRow>
@@ -325,6 +344,7 @@ export default function RepositoryPage() {
                 </Link>
               </TableCell>
               <TableCell>{project.typology}</TableCell>
+              <TableCell>{getProjectStageLabel(project.project_stage)}</TableCell>
               <TableCell>{project.location_city}{project.location_state ? `, ${project.location_state}` : ''}</TableCell>
               <TableCell>{project.built_up_area.toLocaleString()}</TableCell>
               <TableCell>{project.project_year}</TableCell>
@@ -376,7 +396,7 @@ export default function RepositoryPage() {
                       <TableHead key={d.project.id} className="min-w-[140px] text-right">
                         {d.project.project_name}
                         <span className="block text-[10px] font-normal text-muted-foreground">
-                          {d.project.typology} · {d.project.built_up_area.toLocaleString()} sqft
+                          {getProjectStageLabel(d.project.project_stage)} · {d.project.typology} · {d.project.built_up_area.toLocaleString()} sqft
                         </span>
                       </TableHead>
                     ))}
