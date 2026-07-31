@@ -48,11 +48,40 @@ export async function POST(request: NextRequest) {
 
   const admin = getSupabaseAdmin();
   const input = validation.data;
+  let sourceProjectId = input.source_project_id ?? null;
+
+  if (sourceProjectId) {
+    const { data: sourceProject, error: sourceError } = await admin
+      .from('projects')
+      .select('id, source_project_id')
+      .eq('id', sourceProjectId)
+      .single();
+
+    if (sourceError || !sourceProject) {
+      return NextResponse.json({ error: 'Source project not found' }, { status: 404 });
+    }
+
+    sourceProjectId = sourceProject.source_project_id ?? sourceProject.id;
+    const { data: existingStage, error: stageError } = await admin
+      .from('projects')
+      .select('id')
+      .eq('project_stage', input.project_stage)
+      .or(`id.eq.${sourceProjectId},source_project_id.eq.${sourceProjectId}`)
+      .limit(1);
+
+    if (stageError) {
+      return NextResponse.json({ error: stageError.message }, { status: 500 });
+    }
+    if (existingStage && existingStage.length > 0) {
+      return NextResponse.json({ error: 'This project stage already exists' }, { status: 409 });
+    }
+  }
 
   const { data, error: dbError } = await admin
     .from('projects')
     .insert({
       ...input,
+      source_project_id: sourceProjectId,
       status: 'draft',
       submitted_by: user.dbUserId,
     })

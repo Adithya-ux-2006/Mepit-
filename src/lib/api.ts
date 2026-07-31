@@ -147,6 +147,7 @@ export async function createProject(
     carpet_area: number;
     saleable_area: number;
     leasable_area: number;
+    source_project_id?: string | null;
   },
 ): Promise<Project> {
   return apiFetch<Project>('/api/projects', {

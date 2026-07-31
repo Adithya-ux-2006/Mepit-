@@ -27,6 +27,7 @@ export const createProjectSchema = z.object({
   carpet_area: z.number().min(0),
   saleable_area: z.number().min(0),
   leasable_area: z.number().min(0),
+  source_project_id: z.string().uuid().nullable().optional(),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

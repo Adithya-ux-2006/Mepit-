@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ArrowLeft, Pencil, Save, X } from 'lucide-react';
+import { ArrowLeft, CopyPlus, Pencil, Save, X } from 'lucide-react';
 import type { Project, ProjectInputs, ProjectKpiOutput, KpiFormula, ValidationRule } from '@/types';
 import {
   ENGINEERING_SERVICE_GROUPS,
@@ -276,6 +276,12 @@ export default function ProjectDetailPage() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Link href={`/board1/create-project?source=${project.id}`}>
+            <Button size="sm" variant="outline">
+              <CopyPlus className="h-3.5 w-3.5 mr-1.5" />
+              Add Stage
+            </Button>
+          </Link>
           <span className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
             project.status === 'approved' ? 'bg-green-50 text-green-700' :
             project.status === 'submitted' || project.status === 'under_review' ? 'bg-yellow-50 text-yellow-700' :

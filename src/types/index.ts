@@ -39,6 +39,7 @@ export interface Project {
   saleable_area: number;
   leasable_area: number;
   status: ProjectStatus;
+  source_project_id: string | null;
   submitted_by: string;
   approved_by: string | null;
   rejection_reason: string | null;
@@ -207,6 +208,7 @@ export interface CreateProjectInput {
   carpet_area: number;
   saleable_area: number;
   leasable_area: number;
+  source_project_id?: string | null;
 }
 
 export interface ProjectFormData {

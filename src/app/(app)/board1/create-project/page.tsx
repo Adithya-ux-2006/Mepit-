@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, Suspense, useMemo } from 'react';
+import { useState, useCallback, useEffect, Suspense, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -11,6 +11,7 @@ import {
   validateProjectInputs,
   getProjectById,
   getProjectInputs,
+  getProjects,
   updateProject,
   type ValidationError,
 } from '@/lib/api';
@@ -38,8 +39,8 @@ import {
   type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { getRequiredValidationErrors } from '@/lib/validation-engine';
-import { PROJECT_STAGES } from '@/lib/project-stages';
-import type { ProjectStage } from '@/types';
+import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
+import type { Project, ProjectInputs, ProjectStage } from '@/types';
 
 // All fields the form manages (existing columns + extended fields)
 type AllFormFields = string;
@@ -108,6 +109,38 @@ const defaultForm: FormState = {
   ...EXISTING_FIELD_DEFAULTS,
 };
 
+function buildFormFromProject(
+  project: Project,
+  inputs: ProjectInputs | null,
+  resetStage = false,
+): FormState {
+  const formData: FormState = {
+    ...defaultForm,
+    project_name: project.project_name,
+    typology: project.typology,
+    project_stage: resetStage ? '' : project.project_stage,
+    location_city: project.location_city,
+    location_state: project.location_state,
+    project_year: project.project_year,
+    built_up_area: project.built_up_area,
+    carpet_area: project.carpet_area,
+    saleable_area: project.saleable_area,
+    leasable_area: project.leasable_area,
+  };
+
+  const inputValues = (inputs ?? {}) as unknown as Record<string, unknown>;
+  for (const [field, fallback] of Object.entries(EXISTING_FIELD_DEFAULTS)) {
+    formData[field] = inputValues[field] ?? fallback;
+  }
+
+  if (inputs?.extended_fields) {
+    flattenExtendedFields(inputs.extended_fields, formData);
+  }
+
+  return formData;
+}
+
+type EntryMode = 'new' | 'existing';
 const typologies = [
   'Office', 'Retail', 'Hospitality', 'Mixed Use',
   'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional',
@@ -251,6 +284,7 @@ function SelectField({
   options,
   placeholder,
   error,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -258,6 +292,7 @@ function SelectField({
   options: readonly (string | { value: string; label: string })[];
   placeholder?: string;
   error?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="space-y-1.5">
@@ -265,7 +300,8 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm ${error ? 'border-destructive' : 'border-input'}`}
+        disabled={disabled}
+        className={`h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm disabled:cursor-not-allowed disabled:bg-muted/50 ${error ? 'border-destructive' : 'border-input'}`}
       >
         <option value="">{placeholder ?? 'Select...'}</option>
         {options.map((option) => {
@@ -312,6 +348,7 @@ function CreateProjectForm() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const editId = searchParams.get('id');
+  const sourceIdFromQuery = searchParams.get('source');
 
   const [form, setForm] = useState<FormState>(defaultForm);
   const [submitting, setSubmitting] = useState(false);
@@ -323,6 +360,13 @@ function CreateProjectForm() {
   const [loadingProject, setLoadingProject] = useState(!!editId);
   const [existingProjectId, setExistingProjectId] = useState<string | null>(editId);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+  const [entryMode, setEntryMode] = useState<EntryMode>(sourceIdFromQuery ? 'existing' : 'new');
+  const [availableProjects, setAvailableProjects] = useState<Project[]>([]);
+  const [loadingExistingProjects, setLoadingExistingProjects] = useState(!editId);
+  const [loadingSourceProject, setLoadingSourceProject] = useState(false);
+  const [selectedSourceId, setSelectedSourceId] = useState('');
+  const [sourceProjectId, setSourceProjectId] = useState<string | null>(null);
+  const sourceQueryLoaded = useRef(false);
 
   const update = useCallback(<K extends string>(field: K, value: unknown) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -336,6 +380,59 @@ function CreateProjectForm() {
     });
     setValidationErrors((prev) => prev.filter((entry) => entry.field !== field));
   }, []);
+
+  const resetMessages = useCallback(() => {
+    setError('');
+    setSaveMessage('');
+    setValidationErrors([]);
+    setProjectFieldErrors({});
+    setShowValidation(false);
+  }, []);
+
+  const loadSourceProject = useCallback(async (projectId: string) => {
+    setSelectedSourceId(projectId);
+    setExistingProjectId(null);
+    setRejectionReason(null);
+    resetMessages();
+
+    if (!projectId) {
+      setSourceProjectId(null);
+      setForm({ ...defaultForm });
+      return;
+    }
+
+    setLoadingSourceProject(true);
+    try {
+      const [project, inputs] = await Promise.all([
+        getProjectById(projectId),
+        getProjectInputs(projectId),
+      ]);
+      if (!project) throw new Error('Project not found.');
+
+      setSourceProjectId(project.source_project_id ?? project.id);
+      setForm(buildFormFromProject(project, inputs, true));
+      setSaveMessage(
+        `Copied ${getProjectStageLabel(project.project_stage)} values as a baseline. Select the new stage and update the details that changed.`,
+      );
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load the selected project.');
+      setSourceProjectId(null);
+      setForm({ ...defaultForm });
+    } finally {
+      setLoadingSourceProject(false);
+    }
+  }, [resetMessages]);
+
+  const changeEntryMode = useCallback((mode: EntryMode) => {
+    setEntryMode(mode);
+    sourceQueryLoaded.current = true;
+    setSelectedSourceId('');
+    setSourceProjectId(null);
+    setExistingProjectId(null);
+    setRejectionReason(null);
+    setForm({ ...defaultForm });
+    resetMessages();
+  }, [resetMessages]);
 
   const costFields = COST_FIELDS.filter((field) => field !== 'total_mep_cost');
   const sumOfCosts = costFields.reduce((sum, field) => sum + (Number(form[field]) || 0), 0);
@@ -367,6 +464,21 @@ function CreateProjectForm() {
   }, []);
 
   useEffect(() => {
+    if (editId || !user) return;
+
+    getProjects()
+      .then(setAvailableProjects)
+      .catch(() => setError('Unable to load existing projects.'))
+      .finally(() => setLoadingExistingProjects(false));
+  }, [editId, user]);
+
+  useEffect(() => {
+    if (editId || !sourceIdFromQuery || sourceQueryLoaded.current) return;
+    sourceQueryLoaded.current = true;
+    loadSourceProject(sourceIdFromQuery);
+  }, [editId, loadSourceProject, sourceIdFromQuery]);
+
+  useEffect(() => {
     if (!editId) return;
 
     Promise.all([getProjectById(editId), getProjectInputs(editId)])
@@ -374,55 +486,7 @@ function CreateProjectForm() {
         if (!project) return;
         if (project.status !== 'draft' && project.status !== 'rejected') return;
 
-        const formData: FormState = {
-          project_name: project.project_name,
-          typology: project.typology,
-          project_stage: project.project_stage,
-          location_city: project.location_city,
-          location_state: project.location_state,
-          project_year: project.project_year,
-          built_up_area: project.built_up_area,
-          carpet_area: project.carpet_area,
-          saleable_area: project.saleable_area,
-          leasable_area: project.leasable_area,
-          // Existing flat columns
-          plant_room_area: inputs?.plant_room_area ?? null,
-          leasable_plant_room_area: inputs?.leasable_plant_room_area ?? null,
-          shaft_area: inputs?.shaft_area ?? null,
-          office_area: inputs?.office_area ?? null,
-          fb_area: inputs?.fb_area ?? null,
-          gross_area: inputs?.gross_area ?? null,
-          occupancy_density_office: inputs?.occupancy_density_office ?? null,
-          occupancy_density_fb: inputs?.occupancy_density_fb ?? null,
-          total_tr: inputs?.total_tr ?? null,
-          total_airflow_cfm: inputs?.total_airflow_cfm ?? null,
-          hvac_strategy: inputs?.hvac_strategy ?? '',
-          transformer_capacity_kva: inputs?.transformer_capacity_kva ?? null,
-          tenant_power_kva: inputs?.tenant_power_kva ?? null,
-          common_area_power_kva: inputs?.common_area_power_kva ?? null,
-          lighting_load_w: inputs?.lighting_load_w ?? null,
-          dg_capacity_kva: inputs?.dg_capacity_kva ?? null,
-          dg_loading_factor: inputs?.dg_loading_factor ?? null,
-          annual_energy_kwh: inputs?.annual_energy_kwh ?? null,
-          hvac_cost: inputs?.hvac_cost ?? null,
-          electrical_cost: inputs?.electrical_cost ?? null,
-          dg_cost: inputs?.dg_cost ?? null,
-          fire_fighting_cost: inputs?.fire_fighting_cost ?? null,
-          stp_cost: inputs?.stp_cost ?? null,
-          phe_cost: inputs?.phe_cost ?? null,
-          bms_cost: inputs?.bms_cost ?? null,
-          fapa_cost: inputs?.fapa_cost ?? null,
-          cctv_cost: inputs?.cctv_cost ?? null,
-          total_mep_cost: inputs?.total_mep_cost ?? null,
-          operating_hours: inputs?.operating_hours ?? 3000,
-        };
-
-        // Hydrate extended fields into flat form state
-        if (inputs?.extended_fields) {
-          flattenExtendedFields(inputs.extended_fields as Record<string, unknown>, formData);
-        }
-
-        setForm(formData);
+        setForm(buildFormFromProject(project, inputs));
         setExistingProjectId(project.id);
         setRejectionReason(project.status === 'rejected' ? project.rejection_reason : null);
       })
@@ -435,6 +499,12 @@ function CreateProjectForm() {
     setError('');
     setSaveMessage('');
     setSubmitting(true);
+
+    if (entryMode === 'existing' && !sourceProjectId && !existingProjectId) {
+      setError('Select an existing project before adding a stage.');
+      setSubmitting(false);
+      return;
+    }
 
     const currentProjectErrors = buildProjectFieldErrors(form);
     setProjectFieldErrors(currentProjectErrors);
@@ -469,7 +539,7 @@ function CreateProjectForm() {
     try {
       const project = existingProjectId
         ? await updateProject(existingProjectId, projectData)
-        : await createProject(projectData);
+        : await createProject({ ...projectData, source_project_id: sourceProjectId });
 
       const projectId = project.id;
       setExistingProjectId(projectId);
@@ -633,13 +703,28 @@ function CreateProjectForm() {
 
   // Build computed fields map for quick lookup
   const computedMap = new Map(computedFields.map((c) => [c.field, c]));
+  const identityLocked = entryMode === 'existing' && Boolean(selectedSourceId);
+  const availableStageOptions = entryMode === 'existing' && sourceProjectId
+    ? PROJECT_STAGES.filter((stage) => {
+        const usedStages = new Set(
+          availableProjects
+            .filter((project) => (project.source_project_id ?? project.id) === sourceProjectId)
+            .map((project) => project.project_stage),
+        );
+        return !usedStages.has(stage.value);
+      })
+    : PROJECT_STAGES;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : 'New Project'}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : entryMode === 'existing' ? 'Add Project Stage' : 'New Project'}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {existingProjectId ? 'Update project details and resubmit for review.' : 'Enter project details from the MEP Services Comparison workbook.'}
+          {existingProjectId
+            ? 'Update project details and resubmit for review.'
+            : entryMode === 'existing'
+              ? 'Use an existing stage as a baseline, then update the values for the new stage.'
+              : 'Enter details for an entirely new project.'}
         </p>
       </div>
 
@@ -655,6 +740,47 @@ function CreateProjectForm() {
         onSubmit={(e) => { e.preventDefault(); persist('draft'); }}
         className="space-y-4"
       >
+        {!editId && (
+          <div className="space-y-4">
+            <div className="inline-flex rounded-md border border-input bg-muted/30 p-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={entryMode === 'new' ? 'default' : 'ghost'}
+                onClick={() => changeEntryMode('new')}
+              >
+                New Project
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={entryMode === 'existing' ? 'default' : 'ghost'}
+                onClick={() => changeEntryMode('existing')}
+              >
+                Add Stage to Existing
+              </Button>
+            </div>
+
+            {entryMode === 'existing' && (
+              <div className="border-y border-border py-4">
+                <SelectField
+                  label="Existing Project Stage *"
+                  value={selectedSourceId}
+                  onChange={loadSourceProject}
+                  options={availableProjects.map((project) => ({
+                    value: project.id,
+                    label: `${project.project_name} - ${getProjectStageLabel(project.project_stage)} - ${project.location_city}`,
+                  }))}
+                  placeholder={loadingExistingProjects ? 'Loading projects...' : 'Select a project stage to copy...'}
+                  disabled={loadingExistingProjects || loadingSourceProject}
+                />
+                {availableStageOptions.length === 0 && sourceProjectId && (
+                  <p className="mt-2 text-xs text-amber-700">All configured project stages already exist for this project.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {/* Section 1: Project Identity (truncated — area fields moved to Section 2) */}
         <Section title="1. Project Identity">
           <div className="grid grid-cols-2 gap-4">
@@ -662,6 +788,7 @@ function CreateProjectForm() {
               <Label className="text-xs text-muted-foreground">Project Name *</Label>
               <Input
                 value={form.project_name}
+                disabled={identityLocked}
                 onChange={(e) => update('project_name', e.target.value)}
                 placeholder="e.g. Green Tower Office"
                 className={`h-8 text-sm ${fieldErrorMap.project_name ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
@@ -674,19 +801,22 @@ function CreateProjectForm() {
               onChange={(value) => update('typology', value)}
               options={typologies}
               error={fieldErrorMap.typology}
+              disabled={identityLocked}
             />
             <SelectField
               label="Project Stage *"
               value={form.project_stage}
               onChange={(value) => update('project_stage', value)}
-              options={PROJECT_STAGES}
+              options={availableStageOptions}
               placeholder="Select project stage..."
               error={fieldErrorMap.project_stage}
+              disabled={entryMode === 'existing' && (loadingExistingProjects || !sourceProjectId || availableStageOptions.length === 0)}
             />
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">City *</Label>
               <Input
                 value={form.location_city}
+                disabled={identityLocked}
                 onChange={(e) => update('location_city', e.target.value)}
                 placeholder="e.g. Mumbai"
                 className={`h-8 text-sm ${fieldErrorMap.location_city ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
@@ -697,6 +827,7 @@ function CreateProjectForm() {
               <Label className="text-xs text-muted-foreground">State</Label>
               <Input
                 value={form.location_state}
+                disabled={identityLocked}
                 onChange={(e) => update('location_state', e.target.value)}
                 placeholder="e.g. Maharashtra"
                 className="h-8 text-sm"
@@ -823,14 +954,14 @@ function CreateProjectForm() {
 
         <div className="flex gap-3 pt-2">
           <Button type="submit" variant="outline" disabled={submitting}>
-            {submitting ? 'Saving...' : 'Save Draft'}
+            {submitting ? 'Saving...' : entryMode === 'existing' && !existingProjectId ? 'Save Stage Draft' : 'Save Draft'}
           </Button>
           <Button
             type="button"
             disabled={submitting}
             onClick={() => persist('submitted')}
           >
-            {submitting ? 'Submitting...' : 'Validate & Submit'}
+            {submitting ? 'Submitting...' : entryMode === 'existing' && !existingProjectId ? 'Validate & Add Stage' : 'Validate & Submit'}
           </Button>
         </div>
       </form>
