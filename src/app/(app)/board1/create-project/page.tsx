@@ -37,6 +37,10 @@ import {
   type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { getRequiredValidationErrors } from '@/lib/validation-engine';
+import {
+  normalizeProjectFormErrorField,
+  parseProjectFormApiError,
+} from '@/lib/project-form-errors';
 import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
 import type { Project, ProjectInputs, ProjectStage } from '@/types';
 
@@ -229,6 +233,7 @@ function NumField({
   onChange,
   placeholder,
   min,
+  max,
   error,
   decimals,
   readOnly,
@@ -239,6 +244,7 @@ function NumField({
   onChange: (v: number | null) => void;
   placeholder?: string;
   min?: number;
+  max?: number;
   error?: string;
   decimals?: number;
   readOnly?: boolean;
@@ -267,10 +273,12 @@ function NumField({
           const nextValue = Number(rawValue);
           if (Number.isNaN(nextValue)) return;
           if (min != null && nextValue < min) return;
+          if (max != null && nextValue > max) return;
           onChange(nextValue);
         }}
         placeholder={readOnly ? '—' : placeholder}
         min={min}
+        max={max}
         step={decimals != null ? `0.${'0'.repeat(Math.max(decimals - 1, 0))}1` : undefined}
         className={`h-8 text-sm ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''} ${readOnly ? 'bg-muted/50 cursor-not-allowed' : ''}`}
         readOnly={readOnly}
@@ -428,13 +436,6 @@ function CreateProjectForm() {
     setForm((prev) => ({ ...prev, [field]: value }));
     setSaveMessage('');
     setError('');
-    setProjectFieldErrors((prev) => {
-      if (!prev[field as string]) return prev;
-      const next = { ...prev };
-      delete next[field as string];
-      return next;
-    });
-    setValidationErrors((prev) => prev.filter((entry) => entry.field !== field));
   }, []);
 
   const resetMessages = useCallback(() => {
@@ -509,7 +510,8 @@ function CreateProjectForm() {
   const fieldErrorMap = useMemo(() => {
     const next: Record<string, string> = { ...projectFieldErrors };
     for (const entry of validationErrors) {
-      if (!next[entry.field]) next[entry.field] = entry.error_message;
+      const field = normalizeProjectFormErrorField(entry.field);
+      if (!next[field]) next[field] = entry.error_message;
     }
     return next;
   }, [projectFieldErrors, validationErrors]);
@@ -518,7 +520,10 @@ function CreateProjectForm() {
   const computedFields = useMemo(() => getComputedFields(form), [form]);
 
   const runValidation = useCallback(async (data: FormState) => {
-    const errors = await validateProjectInputs(buildSubmitValidationData(data));
+    const errors = (await validateProjectInputs(buildSubmitValidationData(data))).map((entry) => ({
+      ...entry,
+      field: normalizeProjectFormErrorField(entry.field),
+    }));
     setValidationErrors(errors);
     setShowValidation(true);
     return errors;
@@ -645,9 +650,9 @@ function CreateProjectForm() {
       }
 
       const currentProjectErrors = buildProjectFieldErrors(form);
+      if (!silent) setProjectFieldErrors(currentProjectErrors);
       if (Object.keys(currentProjectErrors).length > 0) {
         if (!silent) {
-          setProjectFieldErrors(currentProjectErrors);
           setShowValidation(true);
           setCurrentStep(0);
         }
@@ -740,7 +745,15 @@ function CreateProjectForm() {
         : 'Draft saved. You can continue editing without losing the rest of the form.');
     } catch (err: unknown) {
       if (!silent) {
-        setError(err instanceof Error ? err.message : 'Operation failed');
+        const message = err instanceof Error ? err.message : 'Operation failed';
+        const inputErrors = parseProjectFormApiError(message);
+        if (inputErrors.length > 0) {
+          setValidationErrors(inputErrors);
+          setShowValidation(true);
+          setError('Update the flagged fields below, then try submitting again.');
+        } else {
+          setError(message);
+        }
       }
     } finally {
       persistingRef.current = false;
@@ -819,6 +832,7 @@ function CreateProjectForm() {
         onChange={(value) => update(field, value)}
         placeholder={meta.placeholder}
         min={meta.min}
+        max={meta.max}
         decimals={meta.decimals}
         error={errorMessage}
       />
@@ -886,8 +900,6 @@ function CreateProjectForm() {
     );
   }
 
-  const requiredErrors = getRequiredValidationErrors(validationErrors);
-  const advisoryErrors = validationErrors.filter((entry) => entry.rule_type !== 'required');
 
   // Build computed fields map for quick lookup
   const computedMap = new Map(computedFields.map((c) => [c.field, c]));
@@ -902,6 +914,25 @@ function CreateProjectForm() {
         return !usedStages.has(stage.value);
       })
     : PROJECT_STAGES;
+
+  const correctionMap = new Map<string, { field: string; messages: string[] }>();
+  const addCorrection = (fieldName: string, message: string) => {
+    const field = normalizeProjectFormErrorField(fieldName);
+    const existing = correctionMap.get(field);
+    if (existing) {
+      if (!existing.messages.includes(message)) existing.messages.push(message);
+      return;
+    }
+    correctionMap.set(field, { field, messages: [message] });
+  };
+
+  for (const [field, message] of Object.entries(projectFieldErrors)) {
+    addCorrection(field, message);
+  }
+  for (const entry of validationErrors) {
+    addCorrection(entry.field, entry.error_message);
+  }
+  const correctionErrors = Array.from(correctionMap.values());
 
   const activeStep = FORM_STEPS[currentStep] ?? FORM_STEPS[0];
   const activeGroup = activeStep.group;
@@ -942,6 +973,86 @@ function CreateProjectForm() {
       />
     </div>
   );
+  const renderCorrectionControl = (field: string) => {
+    const errorMessage = fieldErrorMap[field];
+    const textFields: Record<string, { label: string; placeholder?: string }> = {
+      project_name: { label: 'Project Name', placeholder: 'e.g. Green Tower Office' },
+      location_city: { label: 'City', placeholder: 'e.g. Mumbai' },
+      location_state: { label: 'State', placeholder: 'e.g. Maharashtra' },
+    };
+    if (textFields[field]) {
+      return (
+        <TextField
+          label={textFields[field].label}
+          value={(form[field] as string) ?? ''}
+          onChange={(value) => update(field, value)}
+          placeholder={textFields[field].placeholder}
+          error={errorMessage}
+        />
+      );
+    }
+    if (field === 'typology') {
+      return (
+        <SelectField
+          label="Typology"
+          value={form.typology}
+          onChange={(value) => update('typology', value)}
+          options={typologies}
+          error={errorMessage}
+        />
+      );
+    }
+    if (field === 'project_stage') {
+      return (
+        <SelectField
+          label="Project Stage"
+          value={form.project_stage}
+          onChange={(value) => update('project_stage', value)}
+          options={availableStageOptions}
+          error={errorMessage}
+        />
+      );
+    }
+    if (field === 'project_year') {
+      return (
+        <NumField
+          label="Project Year"
+          unit=""
+          value={form.project_year}
+          onChange={(value) => update('project_year', value ?? new Date().getFullYear())}
+          min={1980}
+          max={2100}
+          error={errorMessage}
+        />
+      );
+    }
+
+    const areaFields: Record<string, string> = {
+      built_up_area: 'Total BUA',
+      carpet_area: 'Carpet Area',
+      saleable_area: 'Saleable Area',
+      leasable_area: 'Leasable Area',
+    };
+    if (areaFields[field]) {
+      return (
+        <NumField
+          label={areaFields[field]}
+          unit="sqft"
+          value={(form[field] as number | null) ?? null}
+          onChange={(value) => update(field, value)}
+          min={0}
+          error={errorMessage}
+        />
+      );
+    }
+
+    const inputMeta = PROJECT_INPUT_FIELD_META[field as ProjectInputField];
+    if (inputMeta && inputMeta.kind !== 'computed') {
+      return renderField(field as ProjectInputField, computedMap);
+    }
+    return null;
+  };
+
   const goToStep = (index: number) => {
     setCurrentStep(Math.max(0, Math.min(index, FORM_STEPS.length - 1)));
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1157,35 +1268,42 @@ function CreateProjectForm() {
               </p>
             )}
 
-            {showValidation && (Object.keys(projectFieldErrors).length > 0 || requiredErrors.length > 0) && (
-              <div className="mt-4 border-l-2 border-destructive bg-destructive/5 px-4 py-3">
-                <p className="text-sm font-medium text-destructive">Required information is missing.</p>
-                <ul className="mt-2 space-y-1">
-                  {Object.entries(projectFieldErrors).map(([field, message]) => (
-                    <li key={field} className="text-xs text-destructive">
-                      <span className="font-medium">{projectFieldLabels[field] ?? field}</span>: {message}
-                    </li>
-                  ))}
-                  {requiredErrors.map((entry, index) => (
-                    <li key={entry.field + '-' + index} className="text-xs text-destructive">
-                      <span className="font-medium">{PROJECT_INPUT_FIELD_META[entry.field as ProjectInputField]?.label ?? entry.field}</span>: {entry.error_message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {showValidation && advisoryErrors.length > 0 && (
-              <div className="mt-4 border-l-2 border-amber-500 bg-amber-50 px-4 py-3">
-                <p className="text-sm font-medium text-amber-700">Advisory validation checks</p>
-                <ul className="mt-2 space-y-1">
-                  {advisoryErrors.map((entry, index) => (
-                    <li key={entry.field + '-' + index} className="text-xs text-amber-700">
-                      <span className="font-medium">{PROJECT_INPUT_FIELD_META[entry.field as ProjectInputField]?.label ?? entry.field}</span>: {entry.error_message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {showValidation && correctionErrors.length > 0 && (
+              <section className="mt-6 border-t border-border pt-6" aria-labelledby="correction-panel-title">
+                <div className="border-l-2 border-destructive bg-destructive/5 px-4 py-3">
+                  <h2 id="correction-panel-title" className="text-sm font-semibold text-destructive">
+                    Update flagged fields
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Correct the values here, then submit again. Your other form entries will stay unchanged.
+                  </p>
+                </div>
+                <div className="divide-y divide-border border-b border-border">
+                  {correctionErrors.map(({ field, messages }) => {
+                    const control = renderCorrectionControl(field);
+                    const label = projectFieldLabels[field]
+                      ?? PROJECT_INPUT_FIELD_META[field as ProjectInputField]?.label
+                      ?? field.replaceAll('_', ' ');
+                    return (
+                      <div
+                        key={field}
+                        data-validation-correction={field}
+                        className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] md:items-start"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{label}</p>
+                          <ul className="mt-1 space-y-1">
+                            {messages.map((message) => (
+                              <li key={message} className="text-xs text-destructive">{message}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        {control ? <div>{control}</div> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
             )}
 
             <div className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
