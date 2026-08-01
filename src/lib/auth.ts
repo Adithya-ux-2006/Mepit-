@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 
 interface DatabaseUser {
@@ -92,12 +93,14 @@ export async function resolveAuthUser(accessToken: string): Promise<AuthUser | n
   }
 }
 
-export async function getAuthUser(request?: NextRequest): Promise<AuthUser | null> {
+async function getAuthUserUncached(request?: NextRequest): Promise<AuthUser | null> {
   const sessionCookie = request
     ? request.cookies.get('__session')?.value
     : (await cookies()).get('__session')?.value;
   return sessionCookie ? resolveAuthUser(sessionCookie) : null;
 }
+
+export const getAuthUser = cache(getAuthUserUncached);
 
 export async function requireAuth(request: NextRequest): Promise<[AuthUser, null] | [null, NextResponse]> {
   const user = await getAuthUser(request);
