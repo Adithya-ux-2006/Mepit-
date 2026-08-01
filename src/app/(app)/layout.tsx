@@ -1,38 +1,28 @@
-'use client';
-
-import { useAuth } from '@/lib/auth-context';
-import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { redirect } from 'next/navigation';
 import { Navigation } from '@/components/layout/navigation';
+import { AuthProvider } from '@/lib/auth-context';
+import { getAuthUser } from '@/lib/auth';
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
+export const dynamic = 'force-dynamic';
 
-  useEffect(() => {
-    if (!loading && !user) {
-      const redirectPath = `/login?redirect=${encodeURIComponent(pathname)}`;
-      router.push(redirectPath);
-    }
-  }, [user, loading, router, pathname]);
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const authUser = await getAuthUser();
+  if (!authUser) redirect('/login');
 
-  if (loading) {
-    return (
-      <div className="flex flex-1 min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
+  const user = {
+    id: authUser.dbUserId,
+    name: authUser.name,
+    email: authUser.email,
+    role: authUser.role,
+    created_at: authUser.createdAt,
+  };
 
   return (
-    <div className="flex min-h-screen">
-      <Navigation />
-      <main className="flex-1 overflow-auto p-6 bg-background">{children}</main>
-    </div>
+    <AuthProvider initialUser={user}>
+      <div className="flex min-h-screen">
+        <Navigation />
+        <main className="flex-1 overflow-auto p-6 bg-background">{children}</main>
+      </div>
+    </AuthProvider>
   );
 }

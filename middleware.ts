@@ -27,9 +27,9 @@ export async function middleware(request: NextRequest) {
   }
 
   const admin = getSupabaseAdmin();
-  const { data: { user }, error } = await admin.auth.getUser(accessToken);
+  const { data, error } = await admin.auth.getClaims(accessToken);
 
-  if (error || !user) {
+  if (error || !data?.claims.sub) {
     if (isApiRoute || hasRefreshToken) {
       return response;
     }

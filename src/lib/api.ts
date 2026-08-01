@@ -88,6 +88,16 @@ export async function getCurrentUser(): Promise<User | null> {
   }
 }
 
+export interface DashboardData {
+  projects: Project[];
+  formulas: KpiFormula[];
+  recentActivity: AuditLog[];
+}
+
+export async function getDashboardData(): Promise<DashboardData> {
+  return apiFetch<DashboardData>('/api/dashboard');
+}
+
 // ============================================================================
 // PROJECTS
 // ============================================================================

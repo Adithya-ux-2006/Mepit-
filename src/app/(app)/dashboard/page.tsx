@@ -3,7 +3,7 @@
 import { useEffect, useState, startTransition } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { getProjects, getKpiFormulas, getAuditLogs, getRateLimitStatus, getUserProjects, updateProjectStatus } from '@/lib/api';
+import { getDashboardData, getRateLimitStatus, getUserProjects, updateProjectStatus } from '@/lib/api';
 import type { RateLimitStatus } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FilePlus, FolderOpen, BarChart3, CheckCircle, Clock, FileText, Activity, Shield, AlertTriangle, RefreshCw, Database } from 'lucide-react';
@@ -21,18 +21,18 @@ export default function DashboardPage() {
   const [formulas, setFormulas] = useState<KpiFormula[]>([]);
 
   useEffect(() => {
-    const fetches: Promise<unknown>[] = [getProjects(), getKpiFormulas(), getAuditLogs()];
-    if (user?.id) {
-      fetches.push(getUserProjects(user.id));
-    }
-    Promise.all(fetches)
-      .then(([p, f, logs, mine]) => {
+    getDashboardData()
+      .then((data) => {
         startTransition(() => {
-          setProjects(p as Project[]);
-          setFormulas(f as KpiFormula[]);
-          setFormulaCount((f as unknown[]).length);
-          setRecentActivity((logs as AuditLog[]).slice(0, 10));
-          if (mine) setMyProjects(mine as Project[]);
+          setProjects(data.projects);
+          setFormulas(data.formulas);
+          setFormulaCount(data.formulas.length);
+          setRecentActivity(data.recentActivity);
+          setMyProjects(
+            user?.id
+              ? data.projects.filter((project) => project.submitted_by === user.id)
+              : [],
+          );
         });
       })
       .catch(() => {})

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, startTransition, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
 import { getCurrentUser } from '@/lib/api';
 import type { Role, User } from '@/types';
 
@@ -20,24 +20,13 @@ const AuthContext = createContext<AuthContextValue>({
   refreshProfile: async () => {},
 });
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      getCurrentUser()
-        .then((userData) => {
-          if (userData) setUser(userData);
-        })
-        .finally(() => startTransition(() => setLoading(false)));
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
+export function AuthProvider({ children, initialUser }: { children: ReactNode; initialUser: User }) {
+  const [user, setUser] = useState<User | null>(initialUser);
 
   const signOut = async () => {
     await fetch('/api/auth/session', { method: 'DELETE' });
     setUser(null);
+    window.location.assign('/login');
   };
 
   const refreshProfile = async () => {
@@ -50,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         role: user?.role ?? null,
-        loading,
+        loading: false,
         signOut,
         refreshProfile,
       }}

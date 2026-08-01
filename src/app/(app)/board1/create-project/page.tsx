@@ -33,7 +33,6 @@ import {
   getComputedFields,
   flattenExtendedFields,
   collectExtendedFields,
-  isExtendedField,
   type ProjectInputField,
   type ComputedFieldDef,
   type EngineeringServiceGroup,
@@ -41,9 +40,6 @@ import {
 import { getRequiredValidationErrors } from '@/lib/validation-engine';
 import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
 import type { Project, ProjectInputs, ProjectStage } from '@/types';
-
-// All fields the form manages (existing columns + extended fields)
-type AllFormFields = string;
 
 interface FormState {
   // Project identity
@@ -362,7 +358,8 @@ function CreateProjectForm() {
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [entryMode, setEntryMode] = useState<EntryMode>(sourceIdFromQuery ? 'existing' : 'new');
   const [availableProjects, setAvailableProjects] = useState<Project[]>([]);
-  const [loadingExistingProjects, setLoadingExistingProjects] = useState(!editId);
+  const [loadingExistingProjects, setLoadingExistingProjects] = useState(Boolean(sourceIdFromQuery));
+  const [hasLoadedExistingProjects, setHasLoadedExistingProjects] = useState(false);
   const [loadingSourceProject, setLoadingSourceProject] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState('');
   const [sourceProjectId, setSourceProjectId] = useState<string | null>(null);
@@ -425,6 +422,9 @@ function CreateProjectForm() {
 
   const changeEntryMode = useCallback((mode: EntryMode) => {
     setEntryMode(mode);
+    if (mode === 'existing' && !hasLoadedExistingProjects) {
+      setLoadingExistingProjects(true);
+    }
     sourceQueryLoaded.current = true;
     setSelectedSourceId('');
     setSourceProjectId(null);
@@ -432,7 +432,7 @@ function CreateProjectForm() {
     setRejectionReason(null);
     setForm({ ...defaultForm });
     resetMessages();
-  }, [resetMessages]);
+  }, [hasLoadedExistingProjects, resetMessages]);
 
   const costFields = COST_FIELDS.filter((field) => field !== 'total_mep_cost');
   const sumOfCosts = costFields.reduce((sum, field) => sum + (Number(form[field]) || 0), 0);
@@ -464,13 +464,16 @@ function CreateProjectForm() {
   }, []);
 
   useEffect(() => {
-    if (editId || !user) return;
+    if (editId || !user || entryMode !== 'existing' || hasLoadedExistingProjects) return;
 
     getProjects()
-      .then(setAvailableProjects)
+      .then((projects) => {
+        setAvailableProjects(projects);
+        setHasLoadedExistingProjects(true);
+      })
       .catch(() => setError('Unable to load existing projects.'))
       .finally(() => setLoadingExistingProjects(false));
-  }, [editId, user]);
+  }, [editId, entryMode, hasLoadedExistingProjects, user]);
 
   useEffect(() => {
     if (editId || !sourceIdFromQuery || sourceQueryLoaded.current) return;
@@ -667,12 +670,6 @@ function CreateProjectForm() {
   };
 
   const renderGroup = (group: EngineeringServiceGroup, computedMap: Map<string, ComputedFieldDef>) => {
-    const allFields = [
-      ...group.fields,
-      ...(group.subGroups?.flatMap((sg) => sg.fields) ?? []),
-    ];
-    const computedInGroup = allFields.filter((f) => computedMap.has(f));
-
     return (
       <Section key={group.key} title={group.title} defaultOpen={group.key === 'area-building' || group.key === 'hvac'}>
         <div className="grid grid-cols-2 gap-4">

@@ -80,6 +80,7 @@ export const COST_FIELDS: readonly ProjectInputField[] = [
   'bms_cost',
   'fapa_cost',
   'cctv_cost',
+  'owc_cost_rs_sqft',
   'total_mep_cost',
 ];
 
@@ -187,7 +188,7 @@ const EXTENDED_FIELD_META: Record<ExtendedFieldKey, ProjectInputFieldMeta> = {
   total_va_sqft_saleable: { label: 'Total VA/Sq.Ft. (Saleable)', unit: 'VA/sqft', kind: 'computed' },
   va_sqft_bua_tenant: { label: 'VA/Sqft BUA – Tenant', unit: 'VA/sqft', kind: 'computed' },
   va_sqft_bua_common_ex_ev: { label: 'VA/Sqft BUA – Common excl. EV', unit: 'VA/sqft', kind: 'computed' },
-  va_sqft_bua_ev: { label: 'VA/Sqft BUA – EV Only', unit: 'VA/sqft', kind: 'computed' },
+  va_sqft_bua_ev: { label: 'VA/Sqft BUA – EV Only', unit: 'VA/sqft', kind: 'number', min: 0, decimals: 2 },
   va_sqft_bua_total: { label: 'VA/Sqft BUA – Total', unit: 'VA/sqft', kind: 'computed' },
   baseline_epi: { label: 'Baseline EPI', unit: 'kWh/m²/yr', kind: 'number', min: 0 },
   epi_superstructure: { label: 'EPI (on Superstructure)', unit: 'kWh/m²/yr', kind: 'number', min: 0 },
@@ -311,19 +312,31 @@ export function getComputedFields(inputs: Record<string, unknown>): ComputedFiel
   const totalKva = tenantKva + commonKva;
   const totalVa = totalKva * 1000;
   const transformerCalc = Number(inputs.transformer_sizing_calc) || 0;
-  const transformerLoading = Number(inputs.transformer_loading_pct) || 0;
+  const normalizeLoadingFactor = (value: unknown): number => {
+    const numeric = Number(value) || 0;
+    return numeric > 1 ? numeric / 100 : numeric;
+  };
+  const transformerLoading = normalizeLoadingFactor(inputs.transformer_loading_pct);
   const dgCalc = Number(inputs.dg_capacity_calc) || 0;
-  const dgLoading = Number(inputs.dg_loading_pct) || 0;
+  const dgLoading = normalizeLoadingFactor(inputs.dg_loading_pct);
+  const evVaSqft = Number(inputs.va_sqft_bua_ev) || 0;
+  const transformerAfterLoading = transformerCalc > 0 && transformerLoading > 0
+    ? transformerCalc / transformerLoading
+    : null;
+  const dgAfterLoading = dgCalc > 0 && dgLoading > 0
+    ? dgCalc / dgLoading
+    : null;
 
-  const hvacPkg = Number(inputs.hvac_package_cost_lumpsum) || 0;
-  const elecPkg = Number(inputs.electrical_package_cost_lumpsum) || 0;
-  const dgPkg = Number(inputs.dg_package_cost_lumpsum) || 0;
-  const ffPkg = Number(inputs.ff_package_cost_lumpsum) || 0;
-  const stpPkgCost = Number(inputs.stp_cost) || 0;
-  const phePkg = Number(inputs.phe_package_cost_lumpsum) || 0;
-  const bmsPkgCost = Number(inputs.bms_cost) || 0;
-  const fapaPkgCost = Number(inputs.fapa_cost) || 0;
-  const cctvPkgCost = Number(inputs.cctv_cost) || 0;
+  const packageCostRate = [
+    'hvac_cost', 'electrical_cost', 'dg_cost', 'fire_fighting_cost',
+    'stp_cost', 'owc_cost_rs_sqft', 'phe_cost', 'bms_cost', 'fapa_cost', 'cctv_cost',
+  ].reduce((sum, field) => sum + (Number(inputs[field]) || 0), 0);
+  const packageLumpSum = [
+    'hvac_package_cost_lumpsum', 'electrical_package_cost_lumpsum',
+    'dg_package_cost_lumpsum', 'ff_package_cost_lumpsum',
+    'phe_package_cost_lumpsum', 'fapa_package_cost_lumpsum',
+    'cctv_package_cost_lumpsum',
+  ].reduce((sum, field) => sum + (Number(inputs[field]) || 0), 0);
 
   const fields: ComputedFieldDef[] = [
     // Area & Building
@@ -331,8 +344,8 @@ export function getComputedFields(inputs: Record<string, unknown>): ComputedFiel
     { field: 'leasable_plant_room_bua_pct', label: 'Leasable Plant Room / BUA', unit: '%', compute: () => pct(leasablePlant, bua) },
     { field: 'shaft_area_bua_pct', label: 'Shaft Area / BUA', unit: '%', compute: () => pct(shaft, bua) },
     { field: 'mep_package_value_crores', label: 'MEP Package Value', unit: '₹ Crores', compute: () => {
-      const total = hvacPkg + elecPkg + dgPkg + ffPkg + phePkg;
-      return total > 0 ? total / 10000000 : null;
+      if (packageCostRate > 0 && bua > 0) return (packageCostRate * bua) / 10000000;
+      return packageLumpSum > 0 ? packageLumpSum / 10000000 : null;
     }},
 
     // HVAC
@@ -359,12 +372,13 @@ export function getComputedFields(inputs: Record<string, unknown>): ComputedFiel
     { field: 'total_va_sqft_saleable', label: 'Total VA/Sq.Ft. (Saleable)', unit: 'VA/sqft', compute: () => safeDiv(totalVa, saleable) },
     { field: 'va_sqft_bua_tenant', label: 'VA/Sqft BUA – Tenant', unit: 'VA/sqft', compute: () => safeDiv(tenantKva * 1000, bua) },
     { field: 'va_sqft_bua_common_ex_ev', label: 'VA/Sqft BUA – Common excl. EV', unit: 'VA/sqft', compute: () => safeDiv(commonKva * 1000, bua) },
-    { field: 'va_sqft_bua_ev', label: 'VA/Sqft BUA – EV Only', unit: 'VA/sqft', compute: () => null }, // manual input
-    { field: 'va_sqft_bua_total', label: 'VA/Sqft BUA – Total', unit: 'VA/sqft', compute: () => safeDiv(totalVa, bua) },
-    { field: 'transformer_sizing_after_loading', label: 'Transformer Sizing After Loading', unit: 'kVA', compute: () => transformerCalc > 0 && transformerLoading > 0 ? transformerCalc * (transformerLoading / 100) : null },
+    { field: 'va_sqft_bua_total', label: 'VA/Sqft BUA – Total', unit: 'VA/sqft', compute: () => {
+      const baseDensity = safeDiv(totalVa, bua);
+      return baseDensity == null ? null : baseDensity + evVaSqft;
+    }},
+    { field: 'transformer_sizing_after_loading', label: 'Transformer Sizing After Loading', unit: 'kVA', compute: () => transformerAfterLoading },
     { field: 'va_sqft_transformer', label: 'VA/Sqft (Transformer)', unit: 'VA/sqft', compute: () => {
-      const cap = Number(inputs.transformer_capacity_diversity) || 0;
-      return safeDiv(cap * 1000, bua);
+      return transformerAfterLoading == null ? null : safeDiv(transformerAfterLoading * 1000, bua);
     }},
     { field: 'dg_load_va_saleable', label: 'DG Load VA/sqft (Saleable)', unit: 'VA/sqft', compute: () => safeDiv(dgCalc * 1000, saleable) },
     { field: 'dg_load_va_bua', label: 'DG Load VA/sqft (BUA)', unit: 'VA/sqft', compute: () => safeDiv(dgCalc * 1000, bua) },
@@ -372,7 +386,7 @@ export function getComputedFields(inputs: Record<string, unknown>): ComputedFiel
       const selected = Number(inputs.dg_capacity_selected) || 0;
       return safeDiv(selected * 1000, bua);
     }},
-    { field: 'dg_set_kva_after_loading', label: 'DG Set kVA After Loading', unit: 'kVA', compute: () => dgCalc > 0 && dgLoading > 0 ? dgCalc * (dgLoading / 100) : null },
+    { field: 'dg_set_kva_after_loading', label: 'DG Set kVA After Loading', unit: 'kVA', compute: () => dgAfterLoading },
   ];
 
   return fields;
@@ -440,10 +454,15 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
       'power_supply_sources',
       'tenant_power_kva', 'tenant_power_va_sqft', 'tenant_power_incl_ahu_va',
       'common_area_power_kva', 'common_area_power_va',
+      'total_va_sqft_carpet', 'total_va_sqft_saleable',
+      'va_sqft_bua_tenant', 'va_sqft_bua_common_ex_ev', 'va_sqft_bua_ev', 'va_sqft_bua_total',
       'transformer_capacity_kva', 'transformer_redundancy',
-      'transformer_sizing_calc', 'transformer_loading_pct', 'transformer_capacity_diversity',
+      'transformer_sizing_calc', 'transformer_loading_pct', 'transformer_sizing_after_loading',
+      'transformer_capacity_diversity', 'va_sqft_transformer',
       'dg_capacity_kva', 'dg_loading_factor',
-      'dg_redundancy', 'dg_capacity_calc', 'dg_loading_pct', 'dg_capacity_selected',
+      'dg_redundancy', 'dg_load_va_saleable', 'dg_load_va_bua',
+      'dg_capacity_calc', 'dg_loading_pct', 'va_sqft_dg_capacity',
+      'dg_set_kva_after_loading', 'dg_capacity_selected',
       'hsd_capacity', 'hsd_backup',
       'bus_riser_sizing', 'tenant_isolator_sizing', 'bus_riser_n1',
       'earthing_lv', 'earthing_elv', 'lps',

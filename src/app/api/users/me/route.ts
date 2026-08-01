@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
-import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 
 export async function GET(request: NextRequest) {
@@ -13,16 +12,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const admin = getSupabaseAdmin();
-  const { data: user, error } = await admin
-    .from('users')
-    .select('*')
-    .eq('id', authUser.dbUserId)
-    .single();
-
-  if (error || !user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
-  }
-
-  return NextResponse.json(user);
+  return NextResponse.json({
+    id: authUser.dbUserId,
+    name: authUser.name,
+    email: authUser.email,
+    role: authUser.role,
+    created_at: authUser.createdAt,
+  });
 }

@@ -7,25 +7,28 @@ export interface AuthUser {
   email: string;
   role: 'contributor' | 'admin';
   dbUserId: string;
+  name: string;
+  createdAt: string;
 }
 
 export async function getAuthUser(request?: NextRequest): Promise<AuthUser | null> {
   try {
-    const cookieStore = await cookies();
     const sessionCookie = request
       ? request.cookies.get('__session')?.value
-      : cookieStore.get('__session')?.value;
+      : (await cookies()).get('__session')?.value;
 
     if (!sessionCookie) return null;
 
     const admin = getSupabaseAdmin();
-    const { data: { user: supabaseUser }, error: verifyError } = await admin.auth.getUser(sessionCookie);
-    if (verifyError || !supabaseUser || !supabaseUser.email) return null;
+    const { data: claimData, error: verifyError } = await admin.auth.getClaims(sessionCookie);
+    const uid = claimData?.claims.sub;
+    const email = claimData?.claims.email;
+    if (verifyError || !uid || typeof email !== 'string') return null;
 
     const { data: existingUser, error: dbError } = await admin
       .from('users')
-      .select('id, role')
-      .eq('email', supabaseUser.email)
+      .select('id, name, role, created_at')
+      .eq('email', email)
       .maybeSingle();
 
     if (dbError) return null;
@@ -34,8 +37,8 @@ export async function getAuthUser(request?: NextRequest): Promise<AuthUser | nul
     if (!dbUser) {
       const { data: newUser, error: createError } = await admin
         .from('users')
-        .insert({ email: supabaseUser.email, name: '', role: 'contributor' })
-        .select('id, role')
+        .insert({ email, name: '', role: 'contributor' })
+        .select('id, name, role, created_at')
         .single();
 
       if (createError || !newUser) return null;
@@ -43,10 +46,12 @@ export async function getAuthUser(request?: NextRequest): Promise<AuthUser | nul
     }
 
     return {
-      uid: supabaseUser.id,
-      email: supabaseUser.email,
+      uid,
+      email,
       role: dbUser.role as 'contributor' | 'admin',
       dbUserId: dbUser.id,
+      name: dbUser.name,
+      createdAt: dbUser.created_at,
     };
   } catch (e) {
     console.error('getAuthUser unhandled error:', e);
