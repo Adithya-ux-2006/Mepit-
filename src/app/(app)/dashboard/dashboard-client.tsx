@@ -10,6 +10,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FilePlus, FolderOpen, BarChart3, CheckCircle, Clock, FileText, Activity, Shield, AlertTriangle, RefreshCw, Database } from 'lucide-react';
 import type { Project, KpiFormula } from '@/types';
 
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+const timeFormatter = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+  timeZone: 'UTC',
+});
+const numberFormatter = new Intl.NumberFormat('en-US');
+
 export function DashboardClient({ initialData }: { initialData: DashboardData }) {
   const { user } = useAuth();
   const projects = initialData.projects;
@@ -232,7 +246,7 @@ export function DashboardClient({ initialData }: { initialData: DashboardData })
                     </span>
                   </div>
                   <span className="text-muted-foreground">
-                    {new Date(log.performed_at).toLocaleDateString()}
+                    {dateFormatter.format(new Date(log.performed_at))}
                   </span>
                 </div>
               ))}
@@ -341,7 +355,7 @@ export function DashboardClient({ initialData }: { initialData: DashboardData })
                   </div>
 
                   <p className="text-[11px] text-muted-foreground">
-                    Snapshot at {new Date(rateLimitData.snapshotAt).toLocaleTimeString()}. Counters reset on cold starts (in-memory).
+                    Snapshot at {timeFormatter.format(new Date(rateLimitData.snapshotAt))}. Counters reset on cold starts (in-memory).
                   </p>
                 </div>
               ) : rlLoading ? (
@@ -378,7 +392,7 @@ function TrustDashboardSection({ projects, formulas }: { projects: Project[]; fo
 
   const recentProjects = approved.filter((p) => {
     const year = p.project_year;
-    return year && year >= new Date().getFullYear() - 3;
+    return year && year >= new Date().getUTCFullYear() - 3;
   }).length;
 
   const avgCycleTime = projects
@@ -538,11 +552,11 @@ function TrustDashboardSection({ projects, formulas }: { projects: Project[]; fo
               </div>
               <div className="flex justify-between text-sm">
                 <span>Average BUA</span>
-                <span className="font-semibold">{avgBua.toLocaleString()} sqft</span>
+                <span className="font-semibold">{numberFormatter.format(avgBua)} sqft</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span>BUA Range</span>
-                <span className="font-semibold">{minBua.toLocaleString()} – {maxBua.toLocaleString()} sqft</span>
+                <span className="font-semibold">{numberFormatter.format(minBua)} – {numberFormatter.format(maxBua)} sqft</span>
               </div>
             </div>
           </CardContent>
