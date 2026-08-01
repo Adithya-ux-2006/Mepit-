@@ -23,7 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Calculator, ChevronLeft, ChevronRight, Clock3, Save } from 'lucide-react';
 import {
   COST_FIELDS,
   ENGINEERING_SERVICE_GROUPS,
@@ -141,6 +141,39 @@ const typologies = [
   'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional',
 ];
 
+const AUTOSAVE_INTERVAL_MS = 120_000;
+const LOCAL_DRAFT_VERSION = 1;
+
+interface FormStep {
+  key: string;
+  title: string;
+  group?: EngineeringServiceGroup;
+}
+
+const FORM_STEPS: FormStep[] = [
+  { key: 'identity', title: 'Project details' },
+  ...ENGINEERING_SERVICE_GROUPS.map((group) => ({
+    key: group.key,
+    title: group.title,
+    group,
+  })),
+  { key: 'total', title: 'Cost summary' },
+];
+
+interface StoredFormDraft {
+  version: number;
+  savedAt: string;
+  entryMode: EntryMode;
+  selectedSourceId: string;
+  sourceProjectId: string | null;
+  existingProjectId: string | null;
+  form: FormState;
+}
+
+const computedNumberFormatter = new Intl.NumberFormat('en-IN', {
+  maximumFractionDigits: 2,
+});
+
 const projectFieldLabels: Record<string, string> = {
   project_name: 'Project Name',
   typology: 'Typology',
@@ -182,34 +215,6 @@ function buildSubmitValidationData(data: FormState): Record<string, unknown> {
     }
   }
   return result;
-}
-
-function Section({
-  title,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <Card>
-      <CardHeader className="py-2">
-        <button
-          type="button"
-          className="flex min-h-9 w-full select-none items-center justify-between text-left"
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-        >
-          <CardTitle className="text-base">{title}</CardTitle>
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
-      </CardHeader>
-      {open && <CardContent className="space-y-4">{children}</CardContent>}
-    </Card>
-  );
 }
 
 function FieldError({ error }: { error?: string }) {
@@ -276,6 +281,30 @@ function NumField({
   );
 }
 
+function ComputedResult({
+  field,
+  label,
+  unit,
+  value,
+}: {
+  field: string;
+  label: string;
+  unit: string;
+  value: number | null;
+}) {
+  return (
+    <div
+      data-computed-field={field}
+      className="min-h-20 border-l-2 border-emerald-600 bg-emerald-50/60 px-4 py-3"
+    >
+      <p className="text-xs text-emerald-800">{label}</p>
+      <output className="mt-1 block text-lg font-semibold text-foreground">
+        {value == null ? 'Waiting for inputs' : computedNumberFormatter.format(value)}
+        {value != null && unit ? <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span> : null}
+      </output>
+    </div>
+  );
+}
 function SelectField({
   label,
   value,
@@ -356,7 +385,7 @@ function CreateProjectForm() {
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [showValidation, setShowValidation] = useState(false);
   const [projectFieldErrors, setProjectFieldErrors] = useState<Record<string, string>>({});
-  const [loadingProject, setLoadingProject] = useState(!!editId);
+  const [loadingProject, setLoadingProject] = useState(Boolean(editId || sourceIdFromQuery));
   const [existingProjectId, setExistingProjectId] = useState<string | null>(editId);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [entryMode, setEntryMode] = useState<EntryMode>(sourceIdFromQuery ? 'existing' : 'new');
@@ -366,9 +395,36 @@ function CreateProjectForm() {
   const [loadingSourceProject, setLoadingSourceProject] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState('');
   const [sourceProjectId, setSourceProjectId] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRecovered, setDraftRecovered] = useState(false);
+  const [lastAutosavedAt, setLastAutosavedAt] = useState<Date | null>(null);
   const sourceQueryLoaded = useRef(false);
+  const dirtyRef = useRef(false);
+  const persistingRef = useRef(false);
+  const existingProjectIdRef = useRef<string | null>(editId);
+  const persistRef = useRef<((status: 'draft' | 'submitted', options?: { silent?: boolean }) => Promise<void>) | null>(null);
+  const draftKey = useMemo(
+    () => 'grune:project-form:' + (user?.id ?? 'anonymous') + ':' + (editId ?? sourceIdFromQuery ?? 'new'),
+    [editId, sourceIdFromQuery, user?.id],
+  );
+  const latestDraftRef = useRef<StoredFormDraft | null>(null);
+
+  useEffect(() => {
+    latestDraftRef.current = {
+      version: LOCAL_DRAFT_VERSION,
+      savedAt: new Date().toISOString(),
+      entryMode,
+      selectedSourceId,
+      sourceProjectId,
+      existingProjectId,
+      form,
+    };
+    existingProjectIdRef.current = existingProjectId;
+  }, [entryMode, existingProjectId, form, selectedSourceId, sourceProjectId]);
 
   const update = useCallback(<K extends string>(field: K, value: unknown) => {
+    dirtyRef.current = true;
     setForm((prev) => ({ ...prev, [field]: value }));
     setSaveMessage('');
     setError('');
@@ -411,6 +467,7 @@ function CreateProjectForm() {
 
       setSourceProjectId(project.source_project_id ?? project.id);
       setForm(buildFormFromProject(project, inputs, true));
+      dirtyRef.current = true;
       setSaveMessage(
         `Copied ${getProjectStageLabel(project.project_stage)} values as a baseline. Select the new stage and update the details that changed.`,
       );
@@ -424,6 +481,7 @@ function CreateProjectForm() {
   }, [resetMessages]);
 
   const changeEntryMode = useCallback((mode: EntryMode) => {
+    dirtyRef.current = true;
     setEntryMode(mode);
     if (mode === 'existing' && !hasLoadedExistingProjects) {
       setLoadingExistingProjects(true);
@@ -481,7 +539,7 @@ function CreateProjectForm() {
   useEffect(() => {
     if (editId || !sourceIdFromQuery || sourceQueryLoaded.current) return;
     sourceQueryLoaded.current = true;
-    loadSourceProject(sourceIdFromQuery);
+    void loadSourceProject(sourceIdFromQuery).finally(() => setLoadingProject(false));
   }, [editId, loadSourceProject, sourceIdFromQuery]);
 
   useEffect(() => {
@@ -495,66 +553,142 @@ function CreateProjectForm() {
         setForm(buildFormFromProject(project, inputs));
         setExistingProjectId(project.id);
         setRejectionReason(project.status === 'rejected' ? project.rejection_reason : null);
+        dirtyRef.current = false;
       })
       .finally(() => setLoadingProject(false));
   }, [editId]);
 
-  const persist = async (status: 'draft' | 'submitted') => {
-    if (!user) return;
-
-    setError('');
-    setSaveMessage('');
-    setSubmitting(true);
-
-    if (entryMode === 'existing' && !sourceProjectId && !existingProjectId) {
-      setError('Select an existing project before adding a stage.');
-      setSubmitting(false);
-      return;
+  const writeLocalDraft = useCallback((announce = true) => {
+    if (!dirtyRef.current || !latestDraftRef.current) return;
+    try {
+      const snapshot = {
+        ...latestDraftRef.current,
+        savedAt: new Date().toISOString(),
+      };
+      window.localStorage.setItem(draftKey, JSON.stringify(snapshot));
+      if (announce) setLastAutosavedAt(new Date(snapshot.savedAt));
+    } catch {
+      // Server draft saving remains available if browser storage is unavailable.
     }
+  }, [draftKey]);
 
-    const currentProjectErrors = buildProjectFieldErrors(form);
-    setProjectFieldErrors(currentProjectErrors);
-    if (Object.keys(currentProjectErrors).length > 0) {
-      setSubmitting(false);
-      setShowValidation(true);
-      return;
-    }
+  useEffect(() => {
+    if (!user || loadingProject || draftReady) return;
+    let cancelled = false;
 
-    if (status === 'submitted') {
-      const allValidationErrors = await runValidation(form);
-      const blockingErrors = getRequiredValidationErrors(allValidationErrors);
-      if (blockingErrors.length > 0) {
-        setSubmitting(false);
-        return;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        const rawDraft = window.localStorage.getItem(draftKey);
+        if (rawDraft) {
+          const saved = JSON.parse(rawDraft) as Partial<StoredFormDraft>;
+          if (saved.version === LOCAL_DRAFT_VERSION && saved.form && typeof saved.form === 'object') {
+            setForm({ ...defaultForm, ...saved.form });
+            setEntryMode(saved.entryMode === 'existing' ? 'existing' : 'new');
+            setSelectedSourceId(typeof saved.selectedSourceId === 'string' ? saved.selectedSourceId : '');
+            setSourceProjectId(typeof saved.sourceProjectId === 'string' ? saved.sourceProjectId : null);
+            setExistingProjectId(typeof saved.existingProjectId === 'string' ? saved.existingProjectId : existingProjectId);
+            setLastAutosavedAt(saved.savedAt ? new Date(saved.savedAt) : null);
+            setDraftRecovered(true);
+            dirtyRef.current = true;
+          }
+        }
+      } catch {
+        window.localStorage.removeItem(draftKey);
+      } finally {
+        setDraftReady(true);
       }
-    }
+    });
 
-    const projectData = {
-      project_name: form.project_name,
-      typology: form.typology,
-      project_stage: form.project_stage as ProjectStage,
-      location_city: form.location_city,
-      location_state: form.location_state,
-      project_year: form.project_year,
-      built_up_area: form.built_up_area ?? 0,
-      carpet_area: form.carpet_area ?? 0,
-      saleable_area: form.saleable_area ?? 0,
-      leasable_area: form.leasable_area ?? 0,
+    return () => {
+      cancelled = true;
     };
+  }, [draftKey, draftReady, existingProjectId, loadingProject, user]);
+  useEffect(() => {
+    if (!draftReady || !dirtyRef.current) return;
+    const timeout = window.setTimeout(() => writeLocalDraft(), 800);
+    return () => window.clearTimeout(timeout);
+  }, [draftReady, entryMode, form, selectedSourceId, sourceProjectId, writeLocalDraft]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const preserveDraft = () => writeLocalDraft(false);
+    const preserveHiddenDraft = () => {
+      if (document.visibilityState === 'hidden') preserveDraft();
+    };
+    window.addEventListener('beforeunload', preserveDraft);
+    document.addEventListener('visibilitychange', preserveHiddenDraft);
+    return () => {
+      window.removeEventListener('beforeunload', preserveDraft);
+      document.removeEventListener('visibilitychange', preserveHiddenDraft);
+    };
+  }, [draftReady, writeLocalDraft]);
+
+  const persist = async (
+    status: 'draft' | 'submitted',
+    options: { silent?: boolean } = {},
+  ) => {
+    const silent = options.silent === true;
+    if (!user || persistingRef.current || (silent && !existingProjectIdRef.current)) return;
+
+    persistingRef.current = true;
+    if (!silent) {
+      setError('');
+      setSaveMessage('');
+      setSubmitting(true);
+    }
 
     try {
+      if (entryMode === 'existing' && !sourceProjectId && !existingProjectId) {
+        if (!silent) setError('Select an existing project before adding a stage.');
+        return;
+      }
+
+      const currentProjectErrors = buildProjectFieldErrors(form);
+      if (Object.keys(currentProjectErrors).length > 0) {
+        if (!silent) {
+          setProjectFieldErrors(currentProjectErrors);
+          setShowValidation(true);
+          setCurrentStep(0);
+        }
+        return;
+      }
+
+      if (status === 'submitted') {
+        const allValidationErrors = await runValidation(form);
+        const blockingErrors = getRequiredValidationErrors(allValidationErrors);
+        if (blockingErrors.length > 0) {
+          const firstErrorStep = FORM_STEPS.findIndex((step) =>
+            step.group?.fields.includes(blockingErrors[0].field as ProjectInputField)
+            || step.group?.subGroups?.some((subGroup) =>
+              subGroup.fields.includes(blockingErrors[0].field as ProjectInputField),
+            ),
+          );
+          if (firstErrorStep >= 0) setCurrentStep(firstErrorStep);
+          return;
+        }
+      }
+
+      const projectData = {
+        project_name: form.project_name,
+        typology: form.typology,
+        project_stage: form.project_stage as ProjectStage,
+        location_city: form.location_city,
+        location_state: form.location_state,
+        project_year: form.project_year,
+        built_up_area: form.built_up_area ?? 0,
+        carpet_area: form.carpet_area ?? 0,
+        saleable_area: form.saleable_area ?? 0,
+        leasable_area: form.leasable_area ?? 0,
+      };
+      const wasNewProject = !existingProjectId;
       const project = existingProjectId
         ? await updateProject(existingProjectId, projectData)
         : await createProject({ ...projectData, source_project_id: sourceProjectId });
 
-      const projectId = project.id;
-      setExistingProjectId(projectId);
-
-      // Collect extended fields for persistence
-      const extFields = collectExtendedFields(form);
-
-      await upsertProjectInputs(projectId, {
-        // Existing flat columns
+      setExistingProjectId(project.id);
+      existingProjectIdRef.current = project.id;
+      await upsertProjectInputs(project.id, {
         plant_room_area: (form.plant_room_area as number | null) ?? null,
         leasable_plant_room_area: (form.leasable_plant_room_area as number | null) ?? null,
         shaft_area: (form.shaft_area as number | null) ?? null,
@@ -584,25 +718,51 @@ function CreateProjectForm() {
         cctv_cost: (form.cctv_cost as number | null) ?? null,
         total_mep_cost: (form.total_mep_cost as number | null) ?? null,
         operating_hours: (form.operating_hours as number | null) ?? 3000,
-        // Extended fields
-        extended_fields: extFields,
+        extended_fields: collectExtendedFields(form),
       });
 
+      dirtyRef.current = false;
+      window.localStorage.removeItem(draftKey);
+      setLastAutosavedAt(new Date());
+      setDraftRecovered(false);
+
       if (status === 'submitted') {
-        await updateProjectStatus(projectId, 'submitted');
+        await updateProjectStatus(project.id, 'submitted');
         router.push('/board2/repository');
         return;
       }
 
-      setSaveMessage('Draft saved. You can continue editing without losing the rest of the form.');
+      if (wasNewProject) {
+        router.replace('/board1/create-project?id=' + encodeURIComponent(project.id), { scroll: false });
+      }
+      setSaveMessage(silent
+        ? 'Autosaved to the project draft.'
+        : 'Draft saved. You can continue editing without losing the rest of the form.');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Operation failed';
-      setError(message);
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Operation failed');
+      }
     } finally {
-      setSubmitting(false);
+      persistingRef.current = false;
+      if (!silent) setSubmitting(false);
     }
   };
 
+  useEffect(() => {
+    persistRef.current = persist;
+  });
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const interval = window.setInterval(() => {
+      if (!dirtyRef.current) return;
+      writeLocalDraft();
+      if (existingProjectIdRef.current) {
+        void persistRef.current?.('draft', { silent: true });
+      }
+    }, AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [draftReady, writeLocalDraft]);
   const renderField = (field: ProjectInputField, computedMap?: Map<string, ComputedFieldDef>) => {
     const meta = PROJECT_INPUT_FIELD_META[field];
     if (!meta) return null;
@@ -613,13 +773,12 @@ function CreateProjectForm() {
     if (computed) {
       const val = computed.compute(form);
       return (
-        <NumField
+        <ComputedResult
           key={field}
+          field={field}
           label={computed.label}
           unit={computed.unit}
           value={val}
-          onChange={() => {}}
-          readOnly
         />
       );
     }
@@ -666,24 +825,59 @@ function CreateProjectForm() {
     );
   };
 
-  const renderGroup = (group: EngineeringServiceGroup, computedMap: Map<string, ComputedFieldDef>) => {
+  const renderEditableFields = (
+    fields: readonly ProjectInputField[],
+    computedMap: Map<string, ComputedFieldDef>,
+  ) => fields
+    .filter((field) => !computedMap.has(field))
+    .map((field) => renderField(field, computedMap));
+
+  const renderCalculatedFields = (
+    fields: readonly ProjectInputField[],
+    computedMap: Map<string, ComputedFieldDef>,
+  ) => {
+    const calculated = fields.filter((field) => computedMap.has(field));
+    if (calculated.length === 0) return null;
     return (
-      <Section key={group.key} title={group.title} defaultOpen={group.key === 'area-building' || group.key === 'hvac'}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {group.fields.map((field) => renderField(field, computedMap))}
+      <section className="mt-8 border-t border-border pt-6" aria-label="Calculated results">
+        <div className="mb-4 flex items-center gap-2">
+          <Calculator className="h-4 w-4 text-emerald-700" />
+          <h3 className="text-sm font-semibold">Calculated results</h3>
         </div>
-        {group.subGroups?.map((subGroup) => (
-          <div key={subGroup.key} className="mt-4 border-l-2 border-muted pl-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{subGroup.title}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {subGroup.fields.map((field) => renderField(field, computedMap))}
-            </div>
-          </div>
-        ))}
-      </Section>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {calculated.map((field) => renderField(field, computedMap))}
+        </div>
+      </section>
     );
   };
 
+  const renderGroupContent = (
+    group: EngineeringServiceGroup,
+    computedMap: Map<string, ComputedFieldDef>,
+    areaFields: React.ReactNode = null,
+  ) => {
+    const allFields = [
+      ...group.fields,
+      ...(group.subGroups?.flatMap((subGroup) => [...subGroup.fields]) ?? []),
+    ];
+    return (
+      <>
+        {areaFields}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          {renderEditableFields(group.fields, computedMap)}
+        </div>
+        {group.subGroups?.map((subGroup) => (
+          <section key={subGroup.key} className="mt-8 border-t border-border pt-6">
+            <h3 className="mb-4 text-sm font-semibold">{subGroup.title}</h3>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {renderEditableFields(subGroup.fields, computedMap)}
+            </div>
+          </section>
+        ))}
+        {renderCalculatedFields(allFields, computedMap)}
+      </>
+    );
+  };
   if (loadingProject) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -709,33 +903,89 @@ function CreateProjectForm() {
       })
     : PROJECT_STAGES;
 
+  const activeStep = FORM_STEPS[currentStep] ?? FORM_STEPS[0];
+  const activeGroup = activeStep.group;
+  const progress = Math.round(((currentStep + 1) / FORM_STEPS.length) * 100);
+  const areaInputs = (
+    <div className="mb-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <NumField
+        label="Total BUA"
+        unit="sqft"
+        value={form.built_up_area}
+        onChange={(value) => update('built_up_area', value)}
+        min={0}
+        error={fieldErrorMap.built_up_area}
+      />
+      <NumField
+        label="Carpet Area"
+        unit="sqft"
+        value={form.carpet_area}
+        onChange={(value) => update('carpet_area', value)}
+        min={0}
+        error={fieldErrorMap.carpet_area}
+      />
+      <NumField
+        label="Saleable Area"
+        unit="sqft"
+        value={form.saleable_area}
+        onChange={(value) => update('saleable_area', value)}
+        min={0}
+        error={fieldErrorMap.saleable_area}
+      />
+      <NumField
+        label="Leasable Area"
+        unit="sqft"
+        value={form.leasable_area}
+        onChange={(value) => update('leasable_area', value)}
+        min={0}
+        error={fieldErrorMap.leasable_area}
+      />
+    </div>
+  );
+  const goToStep = (index: number) => {
+    setCurrentStep(Math.max(0, Math.min(index, FORM_STEPS.length - 1)));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="page-header">
-        <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : entryMode === 'existing' ? 'Add Project Stage' : 'New Project'}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {existingProjectId
-            ? 'Update project details and resubmit for review.'
-            : entryMode === 'existing'
-              ? 'Use an existing stage as a baseline, then update the values for the new stage.'
-              : 'Enter details for an entirely new project.'}
-        </p>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="page-header flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {existingProjectId ? 'Edit Project' : entryMode === 'existing' ? 'Add Project Stage' : 'New Project'}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {existingProjectId
+              ? 'Update project details and resubmit for review.'
+              : entryMode === 'existing'
+                ? 'Use an existing stage as a baseline, then update the values for the new stage.'
+                : 'Enter details for an entirely new project.'}
+          </p>
+        </div>
+        <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+          <Clock3 className="h-4 w-4" />
+          {lastAutosavedAt
+            ? 'Saved ' + lastAutosavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Autosave on'}
+        </div>
       </div>
 
-      {rejectionReason && (
-        <div className="border border-red-200 bg-red-50 rounded-lg p-4">
-          <p className="text-sm font-medium text-red-700">This project was previously rejected.</p>
-          <p className="text-xs text-red-600 mt-1">Reason: {rejectionReason}</p>
-          <p className="text-xs text-red-500 mt-1">Fix the issues above and resubmit for review.</p>
+      {draftRecovered && (
+        <div className="border-l-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Recovered your autosaved work from this browser.
         </div>
       )}
 
-      <form
-        onSubmit={(e) => { e.preventDefault(); persist('draft'); }}
-        className="space-y-4"
-      >
+      {rejectionReason && (
+        <div className="border-l-2 border-red-600 bg-red-50 px-4 py-3">
+          <p className="text-sm font-medium text-red-700">This project was previously rejected.</p>
+          <p className="mt-1 text-xs text-red-600">Reason: {rejectionReason}</p>
+        </div>
+      )}
+
+      <form onSubmit={(event) => event.preventDefault()} className="space-y-6">
         {!editId && (
-          <div className="space-y-4">
+          <section className="space-y-4 border-b border-border pb-6">
             <div className="inline-flex rounded-md border border-input bg-muted/30 p-1">
               <Button
                 type="button"
@@ -756,207 +1006,216 @@ function CreateProjectForm() {
             </div>
 
             {entryMode === 'existing' && (
-              <div className="border-y border-border py-4">
-                <SelectField
-                  label="Existing Project Stage *"
-                  value={selectedSourceId}
-                  onChange={loadSourceProject}
-                  options={availableProjects.map((project) => ({
-                    value: project.id,
-                    label: `${project.project_name} - ${getProjectStageLabel(project.project_stage)} - ${project.location_city}`,
-                  }))}
-                  placeholder={loadingExistingProjects ? 'Loading projects...' : 'Select a project stage to copy...'}
-                  disabled={loadingExistingProjects || loadingSourceProject}
-                />
-                {availableStageOptions.length === 0 && sourceProjectId && (
-                  <p className="mt-2 text-xs text-amber-700">All configured project stages already exist for this project.</p>
+              <SelectField
+                label="Existing Project Stage *"
+                value={selectedSourceId}
+                onChange={loadSourceProject}
+                options={availableProjects.map((project) => ({
+                  value: project.id,
+                  label: project.project_name + ' - ' + getProjectStageLabel(project.project_stage) + ' - ' + project.location_city,
+                }))}
+                placeholder={loadingExistingProjects ? 'Loading projects...' : 'Select a project stage to copy...'}
+                disabled={loadingExistingProjects || loadingSourceProject}
+              />
+            )}
+            {entryMode === 'existing' && availableStageOptions.length === 0 && sourceProjectId && (
+              <p className="text-xs text-amber-700">All configured project stages already exist for this project.</p>
+            )}
+          </section>
+        )}
+
+        <div className="grid gap-8 lg:grid-cols-[230px_minmax(0,1fr)]">
+          <aside className="lg:sticky lg:top-20 lg:self-start">
+            <div className="mb-4">
+              <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Application progress</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden bg-muted">
+                <div className="h-full bg-primary transition-all" style={{ width: progress + '%' }} />
+              </div>
+            </div>
+            <nav aria-label="Project form sections" className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-1">
+              {FORM_STEPS.map((step, index) => (
+                <button
+                  key={step.key}
+                  type="button"
+                  onClick={() => goToStep(index)}
+                  aria-current={index === currentStep ? 'step' : undefined}
+                  className={'flex min-h-10 items-center gap-3 border-l-2 px-3 py-2 text-left text-sm transition-colors '
+                    + (index === currentStep
+                      ? 'border-primary bg-primary/5 font-medium text-foreground'
+                      : 'border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground')}
+                >
+                  <span className="w-5 text-xs tabular-nums">{String(index + 1).padStart(2, '0')}</span>
+                  <span>{step.title}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+
+          <main className="min-w-0">
+            <Card className="rounded-md">
+              <CardHeader className="border-b border-border">
+                <p className="text-xs font-medium text-primary">Step {currentStep + 1} of {FORM_STEPS.length}</p>
+                <CardTitle className="text-lg">{activeStep.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {activeStep.key === 'identity' && (
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Project Name *</Label>
+                      <Input
+                        value={form.project_name}
+                        disabled={identityLocked}
+                        onChange={(event) => update('project_name', event.target.value)}
+                        placeholder="e.g. Green Tower Office"
+                        className={'h-8 text-sm ' + (fieldErrorMap.project_name ? 'border-destructive focus-visible:ring-destructive/30' : '')}
+                      />
+                      <FieldError error={fieldErrorMap.project_name} />
+                    </div>
+                    <SelectField
+                      label="Typology *"
+                      value={form.typology}
+                      onChange={(value) => update('typology', value)}
+                      options={typologies}
+                      error={fieldErrorMap.typology}
+                      disabled={identityLocked}
+                    />
+                    <SelectField
+                      label="Project Stage *"
+                      value={form.project_stage}
+                      onChange={(value) => update('project_stage', value)}
+                      options={availableStageOptions}
+                      placeholder="Select project stage..."
+                      error={fieldErrorMap.project_stage}
+                      disabled={entryMode === 'existing' && (loadingExistingProjects || !sourceProjectId || availableStageOptions.length === 0)}
+                    />
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">City *</Label>
+                      <Input
+                        value={form.location_city}
+                        disabled={identityLocked}
+                        onChange={(event) => update('location_city', event.target.value)}
+                        placeholder="e.g. Mumbai"
+                        className={'h-8 text-sm ' + (fieldErrorMap.location_city ? 'border-destructive focus-visible:ring-destructive/30' : '')}
+                      />
+                      <FieldError error={fieldErrorMap.location_city} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">State</Label>
+                      <Input
+                        value={form.location_state}
+                        disabled={identityLocked}
+                        onChange={(event) => update('location_state', event.target.value)}
+                        placeholder="e.g. Maharashtra"
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <NumField
+                      label="Project Year *"
+                      unit=""
+                      value={form.project_year}
+                      onChange={(value) => update('project_year', value ?? new Date().getFullYear())}
+                      min={1980}
+                      error={fieldErrorMap.project_year}
+                    />
+                  </div>
                 )}
+
+                {activeGroup && renderGroupContent(
+                  activeGroup,
+                  computedMap,
+                  activeGroup.key === 'area-building' ? areaInputs : null,
+                )}
+
+                {activeStep.key === 'total' && (
+                  <>
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      {renderEditableFields(TOTAL_COST_FIELDS, computedMap)}
+                    </div>
+                    {sumOfCosts > 0 && (
+                      <div className="mt-6 border-l-2 border-border px-4 py-3 text-sm">
+                        Sum of package costs: <strong>{sumOfCosts.toFixed(2)} Rs/Sq.ft (BUA)</strong>
+                      </div>
+                    )}
+                    {costWarning && (
+                      <div className="mt-3 border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                        {costWarning}
+                      </div>
+                    )}
+                    {renderCalculatedFields(TOTAL_COST_FIELDS, computedMap)}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+            {saveMessage && (
+              <p className="mt-4 border-l-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {saveMessage}
+              </p>
+            )}
+
+            {showValidation && (Object.keys(projectFieldErrors).length > 0 || requiredErrors.length > 0) && (
+              <div className="mt-4 border-l-2 border-destructive bg-destructive/5 px-4 py-3">
+                <p className="text-sm font-medium text-destructive">Required information is missing.</p>
+                <ul className="mt-2 space-y-1">
+                  {Object.entries(projectFieldErrors).map(([field, message]) => (
+                    <li key={field} className="text-xs text-destructive">
+                      <span className="font-medium">{projectFieldLabels[field] ?? field}</span>: {message}
+                    </li>
+                  ))}
+                  {requiredErrors.map((entry, index) => (
+                    <li key={entry.field + '-' + index} className="text-xs text-destructive">
+                      <span className="font-medium">{PROJECT_INPUT_FIELD_META[entry.field as ProjectInputField]?.label ?? entry.field}</span>: {entry.error_message}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
-          </div>
-        )}
-        {/* Section 1: Project Identity (truncated — area fields moved to Section 2) */}
-        <Section title="1. Project Identity">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Project Name *</Label>
-              <Input
-                value={form.project_name}
-                disabled={identityLocked}
-                onChange={(e) => update('project_name', e.target.value)}
-                placeholder="e.g. Green Tower Office"
-                className={`h-8 text-sm ${fieldErrorMap.project_name ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
-              />
-              <FieldError error={fieldErrorMap.project_name} />
-            </div>
-            <SelectField
-              label="Typology *"
-              value={form.typology}
-              onChange={(value) => update('typology', value)}
-              options={typologies}
-              error={fieldErrorMap.typology}
-              disabled={identityLocked}
-            />
-            <SelectField
-              label="Project Stage *"
-              value={form.project_stage}
-              onChange={(value) => update('project_stage', value)}
-              options={availableStageOptions}
-              placeholder="Select project stage..."
-              error={fieldErrorMap.project_stage}
-              disabled={entryMode === 'existing' && (loadingExistingProjects || !sourceProjectId || availableStageOptions.length === 0)}
-            />
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">City *</Label>
-              <Input
-                value={form.location_city}
-                disabled={identityLocked}
-                onChange={(e) => update('location_city', e.target.value)}
-                placeholder="e.g. Mumbai"
-                className={`h-8 text-sm ${fieldErrorMap.location_city ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
-              />
-              <FieldError error={fieldErrorMap.location_city} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">State</Label>
-              <Input
-                value={form.location_state}
-                disabled={identityLocked}
-                onChange={(e) => update('location_state', e.target.value)}
-                placeholder="e.g. Maharashtra"
-                className="h-8 text-sm"
-              />
-            </div>
-            <NumField
-              label="Project Year *"
-              unit=""
-              value={form.project_year}
-              onChange={(value) => update('project_year', value ?? new Date().getFullYear())}
-              min={1980}
-              error={fieldErrorMap.project_year}
-            />
-          </div>
-        </Section>
 
-        {/* Section 2: Design Parameters — all groups from config */}
-        <Section title="2. Design Parameters">
-          <div className="space-y-4">
-            {/* Area & Building Parameters — single merged section */}
-            <Section title="Area & Building Parameters" defaultOpen>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <NumField
-                  label="Total BUA"
-                  unit="sqft"
-                  value={form.built_up_area}
-                  onChange={(value) => update('built_up_area', value)}
-                  min={0}
-                  error={fieldErrorMap.built_up_area}
-                />
-                <NumField
-                  label="Carpet Area"
-                  unit="sqft"
-                  value={form.carpet_area}
-                  onChange={(value) => update('carpet_area', value)}
-                  min={0}
-                  error={fieldErrorMap.carpet_area}
-                />
-                <NumField
-                  label="Saleable Area"
-                  unit="sqft"
-                  value={form.saleable_area}
-                  onChange={(value) => update('saleable_area', value)}
-                  min={0}
-                  error={fieldErrorMap.saleable_area}
-                />
-                <NumField
-                  label="Leasable Area"
-                  unit="sqft"
-                  value={form.leasable_area}
-                  onChange={(value) => update('leasable_area', value)}
-                  min={0}
-                  error={fieldErrorMap.leasable_area}
-                />
+            {showValidation && advisoryErrors.length > 0 && (
+              <div className="mt-4 border-l-2 border-amber-500 bg-amber-50 px-4 py-3">
+                <p className="text-sm font-medium text-amber-700">Advisory validation checks</p>
+                <ul className="mt-2 space-y-1">
+                  {advisoryErrors.map((entry, index) => (
+                    <li key={entry.field + '-' + index} className="text-xs text-amber-700">
+                      <span className="font-medium">{PROJECT_INPUT_FIELD_META[entry.field as ProjectInputField]?.label ?? entry.field}</span>: {entry.error_message}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              {/* Config-driven area-building fields (no extra Section wrapper) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                {(ENGINEERING_SERVICE_GROUPS.find((g) => g.key === 'area-building')?.fields ?? []).map(
-                  (field) => renderField(field, computedMap)
+            )}
+
+            <div className="sticky bottom-0 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={currentStep === 0}
+                onClick={() => goToStep(currentStep - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back
+              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" disabled={submitting} onClick={() => void persist('draft')}>
+                  <Save className="h-4 w-4" />
+                  {submitting ? 'Saving...' : 'Save draft'}
+                </Button>
+                {currentStep < FORM_STEPS.length - 1 ? (
+                  <Button type="button" onClick={() => goToStep(currentStep + 1)}>
+                    Continue
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button type="button" disabled={submitting} onClick={() => void persist('submitted')}>
+                    {submitting ? 'Submitting...' : entryMode === 'existing' && !existingProjectId ? 'Validate & add stage' : 'Validate & submit'}
+                  </Button>
                 )}
               </div>
-            </Section>
-
-            {/* Render all config groups EXCEPT area-building (handled above) */}
-            {ENGINEERING_SERVICE_GROUPS.filter((group) => group.key !== 'area-building').map((group) => renderGroup(group, computedMap))}
-
-            <Section title="Total" defaultOpen>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {TOTAL_COST_FIELDS.map((field) => renderField(field, computedMap))}
-              </div>
-
-              {sumOfCosts > 0 && (
-                <div className="text-xs text-muted-foreground pt-2">
-                  Sum of package costs: <strong>{sumOfCosts.toFixed(2)} ₹/Sq.ft (BUA)</strong>
-                </div>
-              )}
-              {costWarning && (
-                <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
-                  {costWarning}
-                </div>
-              )}
-            </Section>
-          </div>
-        </Section>
-
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
-
-        {saveMessage && (
-          <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">{saveMessage}</p>
-        )}
-
-        {showValidation && (Object.keys(projectFieldErrors).length > 0 || requiredErrors.length > 0) && (
-          <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 space-y-2">
-            <p className="text-sm font-medium text-destructive">Submission blocked until the required fields below are filled.</p>
-            <ul className="list-disc list-inside space-y-1">
-              {Object.entries(projectFieldErrors).map(([field, message]) => (
-                <li key={field} className="text-xs text-destructive">
-                  <span className="font-medium">{projectFieldLabels[field] ?? field}</span>: {message}
-                </li>
-              ))}
-              {requiredErrors.map((entry, index) => (
-                <li key={`${entry.field}-${index}`} className="text-xs text-destructive">
-                  <span className="font-mono font-medium">{entry.field}</span>: {entry.error_message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {showValidation && advisoryErrors.length > 0 && (
-          <div className="border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-2">
-            <p className="text-sm font-medium text-amber-700">Advisory validation checks</p>
-            <ul className="list-disc list-inside space-y-1">
-              {advisoryErrors.map((entry, index) => (
-                <li key={`${entry.field}-${index}`} className="text-xs text-amber-700">
-                  <span className="font-mono font-medium">{entry.field}</span>: {entry.error_message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="sticky bottom-0 z-10 flex flex-wrap gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
-          <Button type="submit" variant="outline" disabled={submitting}>
-            {submitting ? 'Saving...' : entryMode === 'existing' && !existingProjectId ? 'Save Stage Draft' : 'Save Draft'}
-          </Button>
-          <Button
-            type="button"
-            disabled={submitting}
-            onClick={() => persist('submitted')}
-          >
-            {submitting ? 'Submitting...' : entryMode === 'existing' && !existingProjectId ? 'Validate & Add Stage' : 'Validate & Submit'}
-          </Button>
+            </div>
+          </main>
         </div>
       </form>
     </div>

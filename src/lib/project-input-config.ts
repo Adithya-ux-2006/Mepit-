@@ -58,7 +58,7 @@ export const SELECT_OPTIONS: Record<string, readonly string[]> = {
   fapa_addressable: ['UL/FM', 'EN/VDS'] as const,
   mode_server_cooling: ['express riser', 'VRF', 'provision'] as const,
   hydropneumatic_or_gravity: ['Hydropneumatic', 'Gravity Based'] as const,
-  stp_type: ['MBR', 'MBBR'] as const,
+  stp_type: ['MBR', 'MBBR', 'SBR'] as const,
   power_supply_sources: ['1', '2', 'N+1'] as const,
   transformer_redundancy: ['N+1', 'N+standby'] as const,
   dg_redundancy: ['N+1', 'N+standby'] as const,
@@ -407,7 +407,7 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
       'occupancy_hvac_bua', 'occupancy_phe_bua',
       'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
       'plant_room_bua_pct', 'leasable_plant_room_bua_pct', 'shaft_area_bua_pct',
-      'chiller_plant_room_location', 'mep_package_value_crores', 'lesson_learned',
+      'chiller_plant_room_location', 'lesson_learned',
     ],
   },
   // 2. HVAC
@@ -415,8 +415,10 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
     key: 'hvac',
     title: 'HVAC',
     fields: [
-      'occupancy_density_office', 'occupancy_density_fb', 'occupancy_lobby', 'population',
+      'office_area', 'fb_area', 'gross_area',
+      'occupancy_density_office', 'occupancy_density_fb', 'occupancy_lobby',
       'total_tr', 'total_airflow_cfm', 'hvac_strategy',
+      'population', 'cooling_load_saleable', 'cooling_load_superstructure', 'cooling_load_carpet',
       'design_temperature_office', 'iaq_fresh_air',
       'diversity_considered',
       'type_of_chiller', 'chiller_configuration', 'chiller_parameters', 'refrigerant_used',
@@ -560,7 +562,10 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
   // Energy section REMOVED per Task 8
 ];
 
-export const TOTAL_COST_FIELDS: readonly ProjectInputField[] = ['total_mep_cost'];
+export const TOTAL_COST_FIELDS: readonly ProjectInputField[] = [
+  'total_mep_cost',
+  'mep_package_value_crores',
+];
 
 // ============================================================================
 // HELPERS

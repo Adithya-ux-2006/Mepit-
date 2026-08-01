@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   ENGINEERING_SERVICE_GROUPS,
   PROJECT_INPUT_FIELD_META,
+  SELECT_OPTIONS,
+  TOTAL_COST_FIELDS,
   getComputedFields,
 } from '../src/lib/project-input-config.ts';
 
@@ -135,4 +138,67 @@ test('returns null for invalid loading factors and zero denominators', () => {
   assert.equal(values.get('va_sqft_transformer'), null);
   assert.equal(values.get('dg_set_kva_after_loading'), null);
   assert.equal(values.get('cooling_load_carpet'), null);
+});
+test('exposes all computed values in the form and keeps their HVAC inputs editable', () => {
+  const renderedFields = [
+    ...ENGINEERING_SERVICE_GROUPS.flatMap((group) => [
+      ...group.fields,
+      ...(group.subGroups?.flatMap((subGroup) => subGroup.fields) ?? []),
+    ]),
+    ...TOTAL_COST_FIELDS,
+  ];
+  const counts = new Map();
+  for (const field of renderedFields) counts.set(field, (counts.get(field) ?? 0) + 1);
+
+  for (const definition of getComputedFields({})) {
+    assert.equal(counts.get(definition.field), 1, definition.field + ' must appear exactly once');
+  }
+
+  const hvac = ENGINEERING_SERVICE_GROUPS.find((group) => group.key === 'hvac');
+  assert.ok(hvac);
+  for (const field of [
+    'office_area',
+    'fb_area',
+    'gross_area',
+    'cooling_load_saleable',
+    'cooling_load_superstructure',
+    'cooling_load_carpet',
+  ]) {
+    assert.ok(hvac.fields.includes(field), field + ' is missing from the HVAC step');
+  }
+});
+
+test('computes HVAC population and cooling densities from visible inputs', () => {
+  const values = valuesFor({
+    office_area: 100_000,
+    fb_area: 10_000,
+    occupancy_density_office: 100,
+    occupancy_density_fb: 20,
+    saleable_area: 120_000,
+    bua_superstructure: 150_000,
+    carpet_area: 90_000,
+    total_tr: 1_000,
+  });
+
+  assert.equal(values.get('population'), 1_500);
+  assert.equal(values.get('cooling_load_saleable'), 120);
+  assert.equal(values.get('cooling_load_superstructure'), 150);
+  assert.equal(values.get('cooling_load_carpet'), 90);
+});
+
+test('supports SBR as an STP type', () => {
+  assert.ok(SELECT_OPTIONS.stp_type.includes('SBR'));
+});
+
+test('protects project form work with local and timed autosave', () => {
+  const source = readFileSync(
+    new URL('../src/app/(app)/board1/create-project/page.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /AUTOSAVE_INTERVAL_MS = 120_000/);
+  assert.match(source, /window\.localStorage\.setItem/);
+  assert.match(source, /beforeunload/);
+  assert.match(source, /visibilitychange/);
+  assert.match(source, /window\.setInterval/);
 });
