@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 let supabaseAdmin: SupabaseClient | null = null;
@@ -17,7 +17,7 @@ export function getSupabaseAdmin(): SupabaseClient {
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      'Supabase server client not configured. Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.',
+      'Supabase server client not configured. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.',
     );
   }
 
@@ -37,10 +37,10 @@ export function getSupabaseAdmin(): SupabaseClient {
  */
 export function getSupabaseForUser(userToken: string): SupabaseClient {
   if (!supabaseUrl) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set.');
+    throw new Error('SUPABASE_URL is not set.');
   }
 
-  return createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '', {
+  return createClient(supabaseUrl, process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '', {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

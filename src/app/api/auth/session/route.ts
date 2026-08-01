@@ -4,6 +4,7 @@ import { clearSessionCookies, setSessionCookies } from '@/lib/session-cookies';
 import { checkAuthenticationLimits, clearAuthenticationLimits } from '@/lib/security-rate-limit';
 import { noStoreJson } from '@/lib/request-security';
 import { authCredentialsSchema, signupCredentialsSchema, validateInput } from '@/lib/validations';
+import { resolveAuthUser } from '@/lib/auth';
 
 function getAuthConfiguration() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,6 +47,11 @@ export async function POST(request: NextRequest) {
         success: true,
         message: 'Check your email to confirm the account before signing in.',
       });
+    }
+
+    const authUser = await resolveAuthUser(result.data.session.access_token);
+    if (!authUser) {
+      return noStoreJson({ error: 'Your account profile is unavailable. Contact an administrator.' }, { status: 403 });
     }
 
     await clearAuthenticationLimits(limited.keys);
