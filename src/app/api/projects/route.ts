@@ -6,8 +6,8 @@ import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 import { TEAM_VISIBLE_STATUSES, canReadProject } from '@/lib/project-access';
 import { noStoreJson, sanitizeDatabaseError } from '@/lib/request-security';
 import type { ProjectStatus } from '@/types';
+import { LEGACY_PROJECT_COLUMNS, PROJECT_COLUMNS, isMissingProjectStageSchema, normalizeProjectSchema } from '@/lib/project-schema-compat';
 
-const PROJECT_COLUMNS = 'id, project_name, typology, project_stage, location_city, location_state, project_year, built_up_area, carpet_area, saleable_area, leasable_area, status, source_project_id, submitted_by, approved_by, rejection_reason, created_at, approved_at, version';
 const VALID_STATUSES: ProjectStatus[] = ['draft', 'submitted', 'under_review', 'approved', 'rejected'];
 
 export async function GET(request: NextRequest) {
@@ -19,22 +19,25 @@ export async function GET(request: NextRequest) {
   const submittedBy = request.nextUrl.searchParams.get('submitted_by');
   const requestedStatuses = request.nextUrl.searchParams.get('status_in')
     ?.split(',').filter((status): status is ProjectStatus => VALID_STATUSES.includes(status as ProjectStatus));
-  const admin = getSupabaseAdmin();
-  let query = admin.from('projects').select(PROJECT_COLUMNS);
-  if (user.role !== 'admin') {
-    query = query.or('submitted_by.eq.' + user.dbUserId + ',status.in.(' + TEAM_VISIBLE_STATUSES.join(',') + ')');
+  if (submittedBy && user.role !== 'admin' && submittedBy !== user.dbUserId) {
+    return noStoreJson({ error: 'Forbidden' }, { status: 403 });
   }
-  if (submittedBy) {
-    if (user.role !== 'admin' && submittedBy !== user.dbUserId) {
-      return noStoreJson({ error: 'Forbidden' }, { status: 403 });
-    }
-    query = query.eq('submitted_by', submittedBy);
-  }
-  if (requestedStatuses?.length) query = query.in('status', requestedStatuses);
 
-  const { data, error } = await query.order('created_at', { ascending: false });
-  if (error) return sanitizeDatabaseError('List projects', error);
-  return noStoreJson(data ?? []);
+  const admin = getSupabaseAdmin();
+  const buildQuery = (columns: string) => {
+    let query = admin.from('projects').select(columns);
+    if (user.role !== 'admin') {
+      query = query.or('submitted_by.eq.' + user.dbUserId + ',status.in.(' + TEAM_VISIBLE_STATUSES.join(',') + ')');
+    }
+    if (submittedBy) query = query.eq('submitted_by', submittedBy);
+    if (requestedStatuses?.length) query = query.in('status', requestedStatuses);
+    return query.order('created_at', { ascending: false });
+  };
+
+  let result = await buildQuery(PROJECT_COLUMNS);
+  if (isMissingProjectStageSchema(result.error)) result = await buildQuery(LEGACY_PROJECT_COLUMNS);
+  if (result.error) return sanitizeDatabaseError('List projects', result.error);
+  return noStoreJson((result.data ?? []).map((project) => normalizeProjectSchema(project as unknown as Record<string, unknown>)));
 }
 
 export async function POST(request: NextRequest) {

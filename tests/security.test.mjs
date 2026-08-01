@@ -4,6 +4,7 @@ import { canMutateProject, canReadProject } from '../src/lib/project-access.ts';
 import { getOriginRejection } from '../src/lib/request-origin.ts';
 import { hashSecurityKey } from '../src/lib/security-hash.ts';
 import { buildContentSecurityPolicy } from '../src/lib/content-security-policy.ts';
+import { isMissingProjectStageSchema, normalizeProjectSchema } from '../src/lib/project-schema-compat.ts';
 import { authCredentialsSchema, signupCredentialsSchema } from '../src/lib/auth-validation.ts';
 import { updateProjectSchema } from '../src/lib/project-validation.ts';
 
@@ -70,4 +71,12 @@ test('production CSP authorizes only nonce-bearing inline scripts', () => {
   assert.match(policy, /script-src 'self' 'nonce-testnonce' 'strict-dynamic'/);
   assert.equal(policy.includes("script-src 'self' 'unsafe-inline'"), false);
   assert.equal(policy.includes("'unsafe-eval'"), false);
+});
+
+
+test('legacy projects receive safe stage defaults', () => {
+  const project = normalizeProjectSchema({ id: 'legacy', project_name: 'Existing' });
+  assert.equal(project.project_stage, 'tender');
+  assert.equal(project.source_project_id, null);
+  assert.equal(isMissingProjectStageSchema({ code: '42703', message: 'project_stage does not exist' }), true);
 });

@@ -5,8 +5,8 @@ import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 import { canMutateProject, canReadProject, getProjectAccessRecord } from '@/lib/project-access';
 import { noStoreJson, sanitizeDatabaseError } from '@/lib/request-security';
 import { updateProjectSchema, validateInput } from '@/lib/validations';
+import { LEGACY_PROJECT_COLUMNS, PROJECT_COLUMNS, isMissingProjectStageSchema, normalizeProjectSchema } from '@/lib/project-schema-compat';
 
-const PROJECT_COLUMNS = 'id, project_name, typology, project_stage, location_city, location_state, project_year, built_up_area, carpet_area, saleable_area, leasable_area, status, source_project_id, submitted_by, approved_by, rejection_reason, created_at, approved_at, version';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const blocked = rateLimitResponse(request, rateLimits.read);
@@ -17,9 +17,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const admin = getSupabaseAdmin();
   const access = await getProjectAccessRecord(admin, id);
   if (!access || !canReadProject(user, access)) return noStoreJson({ error: 'Not found' }, { status: 404 });
-  const { data, error } = await admin.from('projects').select(PROJECT_COLUMNS).eq('id', id).single();
-  if (error || !data) return sanitizeDatabaseError('Read project', error);
-  return noStoreJson(data);
+  let result = await admin.from('projects').select(PROJECT_COLUMNS).eq('id', id).single();
+  if (isMissingProjectStageSchema(result.error)) {
+    result = await admin.from('projects').select(LEGACY_PROJECT_COLUMNS).eq('id', id).single();
+  }
+  if (result.error || !result.data) return sanitizeDatabaseError('Read project', result.error);
+  return noStoreJson(normalizeProjectSchema(result.data as unknown as Record<string, unknown>));
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
