@@ -21,3 +21,18 @@ export function normalizeProjectSchema<T extends Record<string, unknown>>(projec
   };
 }
 
+
+let projectStageSchemaAvailable: boolean | null = null;
+
+export function getProjectReadColumns(): string {
+  return projectStageSchemaAvailable === false ? LEGACY_PROJECT_COLUMNS : PROJECT_COLUMNS;
+}
+
+export function recordProjectSchemaResult(error: unknown): boolean {
+  if (isMissingProjectStageSchema(error)) {
+    projectStageSchemaAvailable = false;
+    return true;
+  }
+  if (!error) projectStageSchemaAvailable = true;
+  return false;
+}

@@ -4,7 +4,7 @@ import { canMutateProject, canReadProject } from '../src/lib/project-access.ts';
 import { getOriginRejection } from '../src/lib/request-origin.ts';
 import { hashSecurityKey } from '../src/lib/security-hash.ts';
 import { buildContentSecurityPolicy } from '../src/lib/content-security-policy.ts';
-import { isMissingProjectStageSchema, normalizeProjectSchema } from '../src/lib/project-schema-compat.ts';
+import { LEGACY_PROJECT_COLUMNS, getProjectReadColumns, isMissingProjectStageSchema, normalizeProjectSchema, recordProjectSchemaResult } from '../src/lib/project-schema-compat.ts';
 import { authCredentialsSchema, signupCredentialsSchema } from '../src/lib/auth-validation.ts';
 import { updateProjectSchema } from '../src/lib/project-validation.ts';
 
@@ -78,5 +78,8 @@ test('legacy projects receive safe stage defaults', () => {
   const project = normalizeProjectSchema({ id: 'legacy', project_name: 'Existing' });
   assert.equal(project.project_stage, 'tender');
   assert.equal(project.source_project_id, null);
-  assert.equal(isMissingProjectStageSchema({ code: '42703', message: 'project_stage does not exist' }), true);
+  const missingSchema = { code: '42703', message: 'project_stage does not exist' };
+  assert.equal(isMissingProjectStageSchema(missingSchema), true);
+  assert.equal(recordProjectSchemaResult(missingSchema), true);
+  assert.equal(getProjectReadColumns(), LEGACY_PROJECT_COLUMNS);
 });

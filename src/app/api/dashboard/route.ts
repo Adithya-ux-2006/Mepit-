@@ -16,19 +16,21 @@ export async function GET(request: NextRequest) {
   if (user.role !== 'admin') {
     projectsQuery = projectsQuery.or('submitted_by.eq.' + user.dbUserId + ',status.in.(' + TEAM_VISIBLE_STATUSES.join(',') + ')');
   }
-  const [projectsResult, formulasResult] = await Promise.all([
+  const activityPromise = user.role === 'admin'
+    ? admin.from('audit_log').select('*').order('performed_at', { ascending: false }).limit(10)
+    : Promise.resolve({ data: [], error: null });
+  const [projectsResult, formulasResult, adminActivity] = await Promise.all([
     projectsQuery.order('created_at', { ascending: false }),
     admin.from('kpi_formulas').select('*').eq('is_active', true).order('category'),
+    activityPromise,
   ]);
-  const queryError = projectsResult.error ?? formulasResult.error;
+  const queryError = projectsResult.error ?? formulasResult.error ?? adminActivity.error;
   if (queryError) return sanitizeDatabaseError('Load dashboard', queryError);
 
   const visibleProjects = projectsResult.data ?? [];
   let recentActivity: Array<Record<string, unknown>> = [];
   if (user.role === 'admin') {
-    const activity = await admin.from('audit_log').select('*').order('performed_at', { ascending: false }).limit(10);
-    if (activity.error) return sanitizeDatabaseError('Load dashboard activity', activity.error);
-    recentActivity = activity.data ?? [];
+    recentActivity = adminActivity.data ?? [];
   } else {
     const ownIds = visibleProjects.filter((project) => project.submitted_by === user.dbUserId).map((project) => project.id);
     if (ownIds.length) {

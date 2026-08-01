@@ -178,6 +178,20 @@ export async function updateProjectStatus(
   });
 }
 
+
+export interface ProjectDetailBundle {
+  project: Project;
+  inputs: ProjectInputs | null;
+  outputs: (ProjectKpiOutput & { kpi_formula?: KpiFormula })[];
+  validationRules: ValidationRule[];
+}
+
+export async function getProjectDetailBundle(projectId: string): Promise<ProjectDetailBundle> {
+  return apiFetch<ProjectDetailBundle>(
+    `/api/projects/${encodeURIComponent(projectId)}/bundle`,
+  );
+}
+
 // ============================================================================
 // PROJECT INPUTS
 // ============================================================================

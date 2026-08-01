@@ -5,7 +5,7 @@ import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 import { canMutateProject, canReadProject, getProjectAccessRecord } from '@/lib/project-access';
 import { noStoreJson, sanitizeDatabaseError } from '@/lib/request-security';
 import { updateProjectSchema, validateInput } from '@/lib/validations';
-import { LEGACY_PROJECT_COLUMNS, PROJECT_COLUMNS, isMissingProjectStageSchema, normalizeProjectSchema } from '@/lib/project-schema-compat';
+import { LEGACY_PROJECT_COLUMNS, PROJECT_COLUMNS, getProjectReadColumns, normalizeProjectSchema, recordProjectSchemaResult } from '@/lib/project-schema-compat';
 
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -17,8 +17,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const admin = getSupabaseAdmin();
   const access = await getProjectAccessRecord(admin, id);
   if (!access || !canReadProject(user, access)) return noStoreJson({ error: 'Not found' }, { status: 404 });
-  let result = await admin.from('projects').select(PROJECT_COLUMNS).eq('id', id).single();
-  if (isMissingProjectStageSchema(result.error)) {
+  let result = await admin.from('projects').select(getProjectReadColumns()).eq('id', id).single();
+  if (recordProjectSchemaResult(result.error)) {
     result = await admin.from('projects').select(LEGACY_PROJECT_COLUMNS).eq('id', id).single();
   }
   if (result.error || !result.data) return sanitizeDatabaseError('Read project', result.error);

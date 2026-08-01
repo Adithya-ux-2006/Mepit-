@@ -6,7 +6,7 @@ import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
 import { TEAM_VISIBLE_STATUSES, canReadProject } from '@/lib/project-access';
 import { noStoreJson, sanitizeDatabaseError } from '@/lib/request-security';
 import type { ProjectStatus } from '@/types';
-import { LEGACY_PROJECT_COLUMNS, PROJECT_COLUMNS, isMissingProjectStageSchema, normalizeProjectSchema } from '@/lib/project-schema-compat';
+import { LEGACY_PROJECT_COLUMNS, PROJECT_COLUMNS, getProjectReadColumns, normalizeProjectSchema, recordProjectSchemaResult } from '@/lib/project-schema-compat';
 
 const VALID_STATUSES: ProjectStatus[] = ['draft', 'submitted', 'under_review', 'approved', 'rejected'];
 
@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
     return query.order('created_at', { ascending: false });
   };
 
-  let result = await buildQuery(PROJECT_COLUMNS);
-  if (isMissingProjectStageSchema(result.error)) result = await buildQuery(LEGACY_PROJECT_COLUMNS);
+  let result = await buildQuery(getProjectReadColumns());
+  if (recordProjectSchemaResult(result.error)) result = await buildQuery(LEGACY_PROJECT_COLUMNS);
   if (result.error) return sanitizeDatabaseError('List projects', result.error);
   return noStoreJson((result.data ?? []).map((project) => normalizeProjectSchema(project as unknown as Record<string, unknown>)));
 }

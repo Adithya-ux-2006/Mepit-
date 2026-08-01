@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs, getValidationRules } from '@/lib/api';
+import { getProjectDetailBundle, getProjectInputs, getKpiFormulas, upsertProjectInputs, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
@@ -165,14 +165,8 @@ export default function ProjectDetailPage() {
   const loadData = useCallback(() => {
     if (!id) return;
     setLoading(true);
-    Promise.all([
-      getProjectById(id),
-      getProjectInputs(id),
-      getProjectKpiOutputs(id),
-      getKpiFormulas(),
-      getValidationRules(),
-    ])
-      .then(([p, i, o,, rules]) => {
+    getProjectDetailBundle(id)
+      .then(({ project: p, inputs: i, outputs: o, validationRules: rules }) => {
         setProject(p);
         setInputs(i);
         setOutputs(o);

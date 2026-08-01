@@ -19,11 +19,26 @@ export interface AuthUser {
   assuranceLevel: string;
 }
 
+let authUserIdSchemaAvailable: boolean | null = null;
+
+function isMissingAuthUserIdSchema(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: string; message?: string };
+  return candidate.code === '42703' || candidate.code === 'PGRST204'
+    || candidate.message?.includes('auth_user_id') === true;
+}
+
 async function findOrCreateDatabaseUser(uid: string, email: string): Promise<DatabaseUser | null> {
   const admin = getSupabaseAdmin();
-  const byAuthId = await admin.from('users')
-    .select('id, name, role, created_at').eq('auth_user_id', uid).maybeSingle();
-  if (byAuthId.data) return byAuthId.data;
+  if (authUserIdSchemaAvailable !== false) {
+    const byAuthId = await admin.from('users')
+      .select('id, name, role, created_at').eq('auth_user_id', uid).maybeSingle();
+    if (byAuthId.data) {
+      authUserIdSchemaAvailable = true;
+      return byAuthId.data;
+    }
+    authUserIdSchemaAvailable = isMissingAuthUserIdSchema(byAuthId.error) ? false : true;
+  }
 
   // Email is taken only from the verified Supabase token. This fallback keeps
   // existing installations usable until migration 012 has been applied.
@@ -31,7 +46,9 @@ async function findOrCreateDatabaseUser(uid: string, email: string): Promise<Dat
     .select('id, name, role, created_at').eq('email', email).maybeSingle();
   if (byEmail.error) return null;
   if (byEmail.data) {
-    await admin.from('users').update({ auth_user_id: uid }).eq('id', byEmail.data.id);
+    if (authUserIdSchemaAvailable) {
+      await admin.from('users').update({ auth_user_id: uid }).eq('id', byEmail.data.id);
+    }
     return byEmail.data;
   }
 
