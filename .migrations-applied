@@ -7,3 +7,9 @@
 005_enforce_rls.sql
 006_add_rejection_reason.sql
 007_add_kpi_benchmarks.sql
+008_convert_costs_to_rs_sqft.sql
+009_add_required_rules.sql
+010_add_project_stage.sql
+011_link_project_stage_snapshots.sql
+012_security_hardening.sql
+013_fix_security_rate_limit.sql

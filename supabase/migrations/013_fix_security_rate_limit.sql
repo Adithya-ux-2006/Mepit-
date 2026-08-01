@@ -1,20 +1,4 @@
--- Durable, privacy-preserving authentication throttling.
-
-ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_user_id UUID;
-CREATE UNIQUE INDEX IF NOT EXISTS users_auth_user_id_unique_idx
-  ON users (auth_user_id) WHERE auth_user_id IS NOT NULL;
--- Only HMAC hashes are stored; raw IP addresses and email addresses never enter this table.
-
-CREATE TABLE IF NOT EXISTS security_rate_limits (
-  key_hash TEXT PRIMARY KEY CHECK (length(key_hash) = 64),
-  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-  window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  blocked_until TIMESTAMPTZ,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-ALTER TABLE security_rate_limits ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE security_rate_limits FROM PUBLIC, anon, authenticated;
+-- Fix timestamp variable resolution in durable authentication throttling.
 
 CREATE OR REPLACE FUNCTION consume_security_rate_limit(
   p_key_hash TEXT,
@@ -76,19 +60,8 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION clear_security_rate_limits(p_key_hashes TEXT[])
-RETURNS VOID
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = pg_catalog, public
-AS $$
-  DELETE FROM security_rate_limits WHERE key_hash = ANY(p_key_hashes);
-$$;
-
 REVOKE ALL ON FUNCTION consume_security_rate_limit(TEXT, INTEGER, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION clear_security_rate_limits(TEXT[]) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION consume_security_rate_limit(TEXT, INTEGER, INTEGER, INTEGER) TO service_role;
-GRANT EXECUTE ON FUNCTION clear_security_rate_limits(TEXT[]) TO service_role;
 
-CREATE INDEX IF NOT EXISTS security_rate_limits_updated_at_idx
-  ON security_rate_limits (updated_at);
+-- Event triggers invoke this function internally; browser-facing roles do not need execute access.
+REVOKE ALL ON FUNCTION rls_auto_enable() FROM PUBLIC, anon, authenticated;
