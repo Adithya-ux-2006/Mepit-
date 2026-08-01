@@ -10,7 +10,7 @@
  */
 
 import type { Project, ProjectInputs, KpiFormula } from '@/types';
-import { runFormulaEngine, calculateSimilarity } from '@/lib/services';
+import { runFormulaEngine, calculateSimilarity } from '@/lib/engineering';
 import { getProjectInputsBatch } from '@/lib/api';
 
 // ============================================================================

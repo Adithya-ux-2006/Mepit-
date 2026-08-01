@@ -188,8 +188,8 @@ export default function RepositoryPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="page-header flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Project Repository</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -215,7 +215,7 @@ export default function RepositoryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="data-surface grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-6">
         <div className="space-y-1">
           <Label htmlFor="search" className="text-xs">Search</Label>
           <Input
@@ -229,7 +229,7 @@ export default function RepositoryPage() {
           <Label htmlFor="filter-typology" className="text-xs">Typology</Label>
           <select
             id="filter-typology"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
             value={filterTypology}
             onChange={(e) => setFilterTypology(e.target.value)}
           >
@@ -243,7 +243,7 @@ export default function RepositoryPage() {
           <Label htmlFor="filter-stage" className="text-xs">Project Stage</Label>
           <select
             id="filter-stage"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
             value={filterStage}
             onChange={(e) => setFilterStage(e.target.value)}
           >
@@ -257,7 +257,7 @@ export default function RepositoryPage() {
           <Label htmlFor="filter-location" className="text-xs">Location</Label>
           <select
             id="filter-location"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
           >
@@ -271,7 +271,7 @@ export default function RepositoryPage() {
           <Label htmlFor="filter-year" className="text-xs">Year</Label>
           <select
             id="filter-year"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
             value={filterYear}
             onChange={(e) => setFilterYear(e.target.value)}
           >
@@ -285,7 +285,7 @@ export default function RepositoryPage() {
           <Label htmlFor="filter-status" className="text-xs">Status</Label>
           <select
             id="filter-status"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
           >

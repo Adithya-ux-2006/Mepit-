@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, createAuditLog, deleteProjectKpiOutputs, previewKpiOutputs, getValidationRules } from '@/lib/api';
+import { getProjectById, getProjectInputs, getProjectKpiOutputs, upsertProjectInputs, getKpiFormulas, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs, getValidationRules } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
@@ -511,13 +511,6 @@ export default function ProjectDetailPage() {
                       if (updatedInputs && project) {
                         await calculateAndStoreKpiOutputs(id, updatedInputs, formulas, project);
                       }
-                      await createAuditLog({
-                        entity_type: 'project',
-                        entity_id: id,
-                        action: 'inputs_updated',
-                        performed_by: user.id,
-                        metadata: { fields: Object.keys(editForm) },
-                      });
                       setEditing(false);
                       loadData();
                     } catch (err) {

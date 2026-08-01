@@ -5,112 +5,63 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
-  LayoutDashboard,
-  FilePlus,
-  FolderOpen,
-  BarChart3,
-  ShieldCheck,
-  BookOpen,
-  ShieldAlert,
-  LogOut,
+  LayoutDashboard, FilePlus2, FolderKanban, ChartNoAxesCombined,
+  ShieldCheck, BookOpen, ShieldAlert, LogOut,
 } from 'lucide-react';
 
-const navItems = [
+const mainItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/board1/create-project', label: 'New Project', icon: FilePlus },
-  { href: '/board2/repository', label: 'Repository', icon: FolderOpen },
-  { href: '/board3/kpi-engine', label: 'KPI Engine', icon: BarChart3 },
+  { href: '/board1/create-project', label: 'Project input', icon: FilePlus2 },
+  { href: '/board2/repository', label: 'Repository', icon: FolderKanban },
+  { href: '/board3/kpi-engine', label: 'KPI engine', icon: ChartNoAxesCombined },
 ];
 
 const adminItems = [
   { href: '/admin/approvals', label: 'Approvals', icon: ShieldCheck },
-  { href: '/admin/kpi-library', label: 'KPI Library', icon: BookOpen },
-  { href: '/admin/validation-rules', label: 'Validation Rules', icon: ShieldAlert },
+  { href: '/admin/kpi-library', label: 'KPI library', icon: BookOpen },
+  { href: '/admin/validation-rules', label: 'Validation rules', icon: ShieldAlert },
 ];
 
-export function Navigation() {
-  const pathname = usePathname();
-  const { role, signOut } = useAuth();
-
+function NavGroup({ label, items, pathname }: { label: string; items: typeof mainItems; pathname: string }) {
   return (
-    <aside className="w-60 border-r border-sidebar-border bg-sidebar flex flex-col shrink-0">
-      <div className="px-5 py-4 border-b border-sidebar-border">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
-          <Image
-            src="/grune-logo.png"
-            alt="Grüne Designs"
-            width={32}
-            height={32}
-            className="rounded-lg object-contain"
-          />
-          <span className="text-sm font-bold text-sidebar-foreground tracking-tight">
-            Grüne
-          </span>
-        </Link>
-      </div>
-
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        <p className="text-xs font-medium text-sidebar-accent-foreground/60 px-2 pb-1 uppercase tracking-wider">
-          Main
-        </p>
-        {navItems.map((item) => {
+    <div className="nav-group">
+      <p>{label}</p>
+      <nav aria-label={label}>
+        {items.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(item.href + '/');
           const Icon = item.icon;
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-2.5 px-2 py-1.5 text-sm rounded-md transition-colors ${
-                isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                  : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {item.label}
+            <Link key={item.href} href={item.href} aria-current={active ? 'page' : undefined}
+              className={cn('nav-link', active && 'is-active')}>
+              <Icon aria-hidden="true" />
+              <span>{item.label}</span>
             </Link>
           );
         })}
-
-        {role === 'admin' && (
-          <>
-            <div className="pt-4">
-              <p className="text-xs font-medium text-sidebar-accent-foreground/60 px-2 pb-1 uppercase tracking-wider">
-                Admin
-              </p>
-            </div>
-            {adminItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-2.5 px-2 py-1.5 text-sm rounded-md transition-colors ${
-                    isActive
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                      : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </>
-        )}
       </nav>
+    </div>
+  );
+}
 
-      <div className="px-3 py-3 border-t border-sidebar-border">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={signOut}
-          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          Sign Out
+export function Navigation() {
+  const pathname = usePathname();
+  const { user, role, signOut } = useAuth();
+
+  return (
+    <aside className="app-sidebar">
+      <Link href="/dashboard" className="app-brand">
+        <Image src="/grune-logo.png" alt="Grüne Designs" width={34} height={34} priority />
+        <span><strong>Grüne</strong><small>MEP intelligence</small></span>
+      </Link>
+      <NavGroup label="Workspace" items={mainItems} pathname={pathname} />
+      {role === 'admin' && <NavGroup label="Governance" items={adminItems} pathname={pathname} />}
+      <div className="nav-account">
+        <div className="nav-avatar" aria-hidden="true">{(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}</div>
+        <div className="nav-account-copy"><strong>{user?.name || 'Grüne user'}</strong><small>{role}</small></div>
+        <Button variant="ghost" size="icon-sm" onClick={signOut} aria-label="Sign out">
+          <LogOut aria-hidden="true" />
         </Button>
       </div>
     </aside>

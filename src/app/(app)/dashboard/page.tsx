@@ -62,15 +62,15 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="page-header">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Welcome{user?.name ? `, ${user.name}` : ''}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="metric-grid">
         <Card>
           <CardContent className="p-4 flex items-center gap-3">
             <FileText className="h-8 w-8 text-muted-foreground" />

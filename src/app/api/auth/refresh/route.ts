@@ -1,45 +1,36 @@
 import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { clearSessionCookies, setSessionCookies } from '@/lib/session-cookies';
+import { checkRefreshLimit } from '@/lib/security-rate-limit';
+import { noStoreJson } from '@/lib/request-security';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const cookieHeader = request.headers.get('cookie') || '';
-    const parsed = cookieHeader.split(';').map(c => c.trim()).filter(Boolean).map(c => {
-      const eq = c.indexOf('=');
-      return eq === -1 ? [c, ''] : [decodeURIComponent(c.slice(0, eq)).trim(), decodeURIComponent(c.slice(eq + 1))];
+    const limited = await checkRefreshLimit(request);
+    if (limited) return limited;
+
+    const refreshToken = request.cookies.get('__refresh')?.value;
+    if (!refreshToken) return noStoreJson({ error: 'Session expired' }, { status: 401 });
+
+    const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) throw new Error('Authentication provider is not configured');
+
+    const supabase = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
-    const cookies = Object.fromEntries(parsed.reverse());
-    const refreshToken = cookies['__refresh'];
-
-    if (!refreshToken) {
-      return NextResponse.json({ error: 'No refresh token' }, { status: 401 });
-    }
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const isProd = process.env.NODE_ENV === 'production';
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-
     const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
 
     if (error || !data.session) {
-      const response = NextResponse.json({ error: 'Session expired' }, { status: 401 });
+      const response = noStoreJson({ error: 'Session expired' }, { status: 401 });
       clearSessionCookies(response);
       return response;
     }
 
-    const response = NextResponse.json({ success: true, uid: data.user?.id });
-    setSessionCookies(response, data.session, isProd);
+    const response = noStoreJson({ success: true });
+    setSessionCookies(response, data.session, process.env.NODE_ENV === 'production');
     return response;
-  } catch (err) {
-    console.error('Session refresh unhandled error:', err);
-    return NextResponse.json({ error: 'Internal server error during session refresh' }, { status: 500 });
+  } catch {
+    return noStoreJson({ error: 'Session refresh is temporarily unavailable' }, { status: 500 });
   }
 }

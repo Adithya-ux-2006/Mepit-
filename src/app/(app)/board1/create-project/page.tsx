@@ -7,7 +7,6 @@ import {
   createProject,
   upsertProjectInputs,
   updateProjectStatus,
-  createAuditLog,
   validateProjectInputs,
   getProjectById,
   getProjectInputs,
@@ -197,12 +196,16 @@ function Section({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Card>
-      <CardHeader
-        className="cursor-pointer select-none flex flex-row items-center justify-between py-3"
-        onClick={() => setOpen(!open)}
-      >
-        <CardTitle className="text-base">{title}</CardTitle>
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      <CardHeader className="py-2">
+        <button
+          type="button"
+          className="flex min-h-9 w-full select-none items-center justify-between text-left"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <CardTitle className="text-base">{title}</CardTitle>
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
       </CardHeader>
       {open && <CardContent className="space-y-4">{children}</CardContent>}
     </Card>
@@ -587,12 +590,6 @@ function CreateProjectForm() {
 
       if (status === 'submitted') {
         await updateProjectStatus(projectId, 'submitted');
-        await createAuditLog({
-          entity_type: 'project',
-          entity_id: projectId,
-          action: 'submitted',
-          performed_by: user.id,
-        });
         router.push('/board2/repository');
         return;
       }
@@ -672,13 +669,13 @@ function CreateProjectForm() {
   const renderGroup = (group: EngineeringServiceGroup, computedMap: Map<string, ComputedFieldDef>) => {
     return (
       <Section key={group.key} title={group.title} defaultOpen={group.key === 'area-building' || group.key === 'hvac'}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {group.fields.map((field) => renderField(field, computedMap))}
         </div>
         {group.subGroups?.map((subGroup) => (
           <div key={subGroup.key} className="mt-4 border-l-2 border-muted pl-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{subGroup.title}</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {subGroup.fields.map((field) => renderField(field, computedMap))}
             </div>
           </div>
@@ -713,8 +710,8 @@ function CreateProjectForm() {
     : PROJECT_STAGES;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="page-header">
         <h1 className="text-2xl font-semibold tracking-tight">{existingProjectId ? 'Edit Project' : entryMode === 'existing' ? 'Add Project Stage' : 'New Project'}</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {existingProjectId
@@ -780,7 +777,7 @@ function CreateProjectForm() {
         )}
         {/* Section 1: Project Identity (truncated — area fields moved to Section 2) */}
         <Section title="1. Project Identity">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Project Name *</Label>
               <Input
@@ -846,7 +843,7 @@ function CreateProjectForm() {
           <div className="space-y-4">
             {/* Area & Building Parameters — single merged section */}
             <Section title="Area & Building Parameters" defaultOpen>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <NumField
                   label="Total BUA"
                   unit="sqft"
@@ -881,7 +878,7 @@ function CreateProjectForm() {
                 />
               </div>
               {/* Config-driven area-building fields (no extra Section wrapper) */}
-              <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                 {(ENGINEERING_SERVICE_GROUPS.find((g) => g.key === 'area-building')?.fields ?? []).map(
                   (field) => renderField(field, computedMap)
                 )}
@@ -892,7 +889,7 @@ function CreateProjectForm() {
             {ENGINEERING_SERVICE_GROUPS.filter((group) => group.key !== 'area-building').map((group) => renderGroup(group, computedMap))}
 
             <Section title="Total" defaultOpen>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {TOTAL_COST_FIELDS.map((field) => renderField(field, computedMap))}
               </div>
 
@@ -949,7 +946,7 @@ function CreateProjectForm() {
           </div>
         )}
 
-        <div className="flex gap-3 pt-2">
+        <div className="sticky bottom-0 z-10 flex flex-wrap gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
           <Button type="submit" variant="outline" disabled={submitting}>
             {submitting ? 'Saving...' : entryMode === 'existing' && !existingProjectId ? 'Save Stage Draft' : 'Save Draft'}
           </Button>

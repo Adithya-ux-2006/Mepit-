@@ -21,7 +21,7 @@ import type {
 } from '@/types';
 
 // Re-export pure functions that don't need DB access
-export { runFormulaEngine, calculateSimilarity } from '@/lib/services';
+export { runFormulaEngine, calculateSimilarity } from '@/lib/engineering';
 
 // ============================================================================
 // HELPERS
@@ -333,15 +333,6 @@ export async function deleteValidationRule(id: string): Promise<void> {
 // ============================================================================
 // AUDIT LOG
 // ============================================================================
-
-export async function createAuditLog(
-  entry: Partial<AuditLog>,
-): Promise<AuditLog> {
-  return apiFetch<AuditLog>('/api/audit-log', {
-    method: 'POST',
-    body: JSON.stringify(entry),
-  });
-}
 
 export async function getAuditLogs(
   entityType?: string,

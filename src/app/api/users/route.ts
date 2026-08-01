@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, requireAdmin } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { validateInput, upsertUserSchema } from '@/lib/validations';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const admin = getSupabaseAdmin();
   const { data, error: dbError } = await admin
     .from('users')
-    .select('*')
+    .select('id, name, email, role, created_at')
     .order('created_at', { ascending: false });
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   const blocked = rateLimitResponse(request, rateLimits.createUser);
   if (blocked) return blocked;
 
-  const [, error] = await requireAuth(request);
+  const [, error] = await requireAdmin(request);
   if (error) return error;
 
   const body = await request.json();
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   // Check if user already exists
   const { data: existing } = await admin
     .from('users')
-    .select('*')
+    .select('id, name, email, role, created_at')
     .eq('email', input.email)
     .single();
 

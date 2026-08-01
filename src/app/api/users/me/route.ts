@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
 
   const authUser = await getAuthUser(request);
   if (!authUser) {
-    console.error('/api/users/me: getAuthUser returned null');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

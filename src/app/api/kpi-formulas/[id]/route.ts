@@ -1,7 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
+import { validateInput, updateKpiFormulaSchema } from '@/lib/validations';
+import { noStoreJson, sanitizeDatabaseError } from '@/lib/request-security';
 
 export async function PATCH(
   request: NextRequest,
@@ -14,18 +16,19 @@ export async function PATCH(
   if (error) return error;
 
   const { id } = await params;
-  const body = await request.json();
+  const validation = validateInput(updateKpiFormulaSchema, await request.json().catch(() => null));
+  if (!validation.success) return noStoreJson({ error: validation.errors.join('; ') }, { status: 400 });
   const admin = getSupabaseAdmin();
 
   const { data, error: dbError } = await admin
     .from('kpi_formulas')
-    .update(body)
+    .update(validation.data)
     .eq('id', id)
     .select()
     .single();
 
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
-  return NextResponse.json(data);
+  if (dbError) return sanitizeDatabaseError('KPI formula operation', dbError);
+  return noStoreJson(data);
 }
 
 export async function DELETE(
@@ -45,6 +48,6 @@ export async function DELETE(
     .delete()
     .eq('id', id);
 
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
-  return NextResponse.json({ success: true });
+  if (dbError) return sanitizeDatabaseError('KPI formula operation', dbError);
+  return noStoreJson({ success: true });
 }

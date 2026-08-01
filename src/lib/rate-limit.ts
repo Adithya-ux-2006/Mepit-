@@ -89,16 +89,12 @@ export function checkRateLimit(
  * Extract a rate-limit key from a request (IP address via standard headers).
  */
 export function getClientIp(request: Request): string {
-  // Vercel/Next.js forwards the real IP via these headers
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    // May contain multiple IPs; use the first (the original client)
-    return forwarded.split(',')[0].trim();
-  }
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) return realIp;
+  const trustProxy = process.env.VERCEL === '1' || process.env.TRUST_PROXY_HEADERS === 'true';
+  if (!trustProxy) return 'direct-client';
 
-  return 'unknown';
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return request.headers.get('x-real-ip') ?? 'unknown';
 }
 
 /**
@@ -109,7 +105,7 @@ export function rateLimitResponse(
   request: Request,
   config: RateLimitConfig,
 ): Response | null {
-  const key = getClientIp(request);
+  const key = `${config.maxRequests}:${config.windowMs ?? 60_000}:${getClientIp(request)}`;
   const result = checkRateLimit(key, config);
 
   if (!result.allowed) {

@@ -1,80 +1,64 @@
 import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
-import { rateLimitResponse, rateLimits } from '@/lib/rate-limit';
+import { NextRequest } from 'next/server';
 import { clearSessionCookies, setSessionCookies } from '@/lib/session-cookies';
+import { checkAuthenticationLimits, clearAuthenticationLimits } from '@/lib/security-rate-limit';
+import { noStoreJson } from '@/lib/request-security';
+import { authCredentialsSchema, signupCredentialsSchema, validateInput } from '@/lib/validations';
 
-export async function POST(request: Request) {
+function getAuthConfiguration() {
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error('Authentication provider is not configured');
+  return { url, key };
+}
+
+export async function POST(request: NextRequest) {
   try {
-    const blocked = rateLimitResponse(request, rateLimits.auth);
-    if (blocked) return blocked;
-
-    let email: string | undefined;
-    let password: string | undefined;
-    const isSignUp = new URL(request.url).searchParams.get('signup') === '1';
-    try {
-      const body = await request.json();
-      email = body?.email;
-      password = body?.password;
-    } catch {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    const body = await request.json().catch(() => null);
+    const isSignUp = request.nextUrl.searchParams.get('signup') === '1';
+    const validation = validateInput(isSignUp ? signupCredentialsSchema : authCredentialsSchema, body);
+    if (!validation.success) {
+      return noStoreJson({ error: 'Valid email and password are required' }, { status: 400 });
     }
 
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
+    const { email, password } = validation.data;
+    if (isSignUp && process.env.ALLOW_PUBLIC_SIGNUP !== 'true') {
+      return noStoreJson({ error: 'Account registration is managed by an administrator' }, { status: 403 });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const isProd = process.env.NODE_ENV === 'production';
+    const limited = await checkAuthenticationLimits(request, email);
+    if (limited.response) return limited.response;
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+    const { url, key } = getAuthConfiguration();
+    const supabase = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    let session: { access_token: string; refresh_token: string } | null = null;
+    const result = isSignUp
+      ? await supabase.auth.signUp({ email, password })
+      : await supabase.auth.signInWithPassword({ email, password });
 
-    if (isSignUp) {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-      if (!data.session) {
-        return NextResponse.json({
-          error: 'Account created. Please check your email for a confirmation link before signing in.',
-        }, { status: 200 });
-      }
-      session = data.session;
-    } else {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        const message = error.message === 'Invalid login credentials'
-          ? 'Invalid email or password.'
-          : error.message;
-        return NextResponse.json({ error: message }, { status: 401 });
-      }
-      session = data.session;
+    if (result.error) {
+      return noStoreJson({ error: 'Invalid email or password' }, { status: 401 });
+    }
+    if (!result.data.session) {
+      return noStoreJson({
+        success: true,
+        message: 'Check your email to confirm the account before signing in.',
+      });
     }
 
-    const response = NextResponse.json({ success: true });
-    if (session) {
-      setSessionCookies(response, session, isProd);
-    }
-
+    await clearAuthenticationLimits(limited.keys);
+    const response = noStoreJson({ success: true });
+    setSessionCookies(response, result.data.session, process.env.NODE_ENV === 'production');
     return response;
-  } catch (err) {
-    console.error('Session POST unhandled error:', err);
-    return NextResponse.json({ error: 'Internal server error during session creation' }, { status: 500 });
+  } catch {
+    return noStoreJson({ error: 'Authentication is temporarily unavailable' }, { status: 500 });
   }
 }
 
-export async function DELETE(request: Request) {
-  const blocked = rateLimitResponse(request, rateLimits.logout);
-  if (blocked) return blocked;
-
-  const response = NextResponse.json({ success: true });
+export async function DELETE() {
+  const response = noStoreJson({ success: true });
   clearSessionCookies(response);
   return response;
 }

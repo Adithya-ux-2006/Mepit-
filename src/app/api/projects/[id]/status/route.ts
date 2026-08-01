@@ -25,9 +25,15 @@ export async function PATCH(
   const blocked = rateLimitResponse(request, rateLimits.write);
   if (blocked) return blocked;
 
+  const [user, initialAuthError] = await requireAuth(request);
+  if (initialAuthError) return initialAuthError;
+
   const { id } = await params;
   const body = await request.json();
   const { status: rawStatus, rejection_reason } = body as { status?: string; rejection_reason?: string };
+  if (rejection_reason && (typeof rejection_reason !== 'string' || rejection_reason.length > 1000)) {
+    return NextResponse.json({ error: 'Invalid rejection reason' }, { status: 400 });
+  }
 
   if (!rawStatus || !VALID_STATUSES.includes(rawStatus as ProjectStatus)) {
     return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
@@ -104,8 +110,6 @@ export async function PATCH(
 
   if (isContributorAction) {
     // Contributor can only move their own project
-    const [user, authError] = await requireAuth(request);
-    if (authError) return authError;
     // Check ownership via the project DB lookup we already did
     if (project.submitted_by !== user.dbUserId && user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -119,10 +123,7 @@ export async function PATCH(
 
   // Build the update payload
   const update: Record<string, unknown> = { status: nextStatus };
-
-  // Determine who performed the action
-  const [user, ] = await requireAuth(request);
-  const actorId = user?.dbUserId;
+  const actorId = user.dbUserId;
 
   if (nextStatus === 'approved') {
     update.approved_at = new Date().toISOString();

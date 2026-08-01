@@ -6,31 +6,10 @@
  */
 
 import { z } from 'zod';
-import { extendedFieldsSchema, stripComputedFields } from '@/lib/project-input-config';
-import { PROJECT_STAGE_VALUES } from '@/lib/project-stages';
+import { extendedFieldsSchema } from '@/lib/project-input-config';
 
-// ============================================================================
-// PROJECT SCHEMAS
-// ============================================================================
-
-export const createProjectSchema = z.object({
-  project_name: z.string().min(1, 'Project name is required').max(200),
-  typology: z.enum([
-    'Office', 'Retail', 'Hospitality', 'Mixed Use',
-    'Residential', 'Healthcare', 'Industrial', 'Data Centre', 'Institutional',
-  ]),
-  project_stage: z.enum(PROJECT_STAGE_VALUES),
-  location_city: z.string().min(1, 'City is required').max(100),
-  location_state: z.string().max(100).optional().default(''),
-  project_year: z.number().int().min(1980).max(2100),
-  built_up_area: z.number().min(0),
-  carpet_area: z.number().min(0),
-  saleable_area: z.number().min(0),
-  leasable_area: z.number().min(0),
-  source_project_id: z.string().uuid().nullable().optional(),
-});
-
-export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+export { authCredentialsSchema, signupCredentialsSchema } from '@/lib/auth-validation';
+export { createProjectSchema, updateProjectSchema, type CreateProjectInput } from '@/lib/project-validation';
 
 // ============================================================================
 // PROJECT INPUTS SCHEMA (Engineering Parameters)
@@ -98,6 +77,8 @@ export const createKpiFormulaSchema = z.object({
 });
 
 export type CreateKpiFormulaInput = z.infer<typeof createKpiFormulaSchema>;
+export const updateKpiFormulaSchema = createKpiFormulaSchema.partial().strict()
+  .refine((value) => Object.keys(value).length > 0, 'At least one KPI field is required');
 
 // ============================================================================
 // VALIDATION RULE SCHEMA
@@ -114,6 +95,8 @@ export const createValidationRuleSchema = z.object({
 });
 
 export type CreateValidationRuleInput = z.infer<typeof createValidationRuleSchema>;
+export const updateValidationRuleSchema = createValidationRuleSchema.partial().strict()
+  .refine((value) => Object.keys(value).length > 0, 'At least one validation field is required');
 
 // ============================================================================
 // USER SCHEMA

@@ -183,9 +183,9 @@ export default function KpiEnginePage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">KPI Recommendation Engine</h1>
+        <div className="page-header"><h1 className="text-2xl font-semibold tracking-tight">KPI Recommendation Engine</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Generate benchmark KPI recommendations based on similar historical projects.
         </p>
@@ -197,6 +197,7 @@ export default function KpiEnginePage() {
             </span>
           )}
         </p>
+        </div>
       </div>
 
       <Card>
@@ -210,7 +211,7 @@ export default function KpiEnginePage() {
               <select
                 value={form.typology}
                 onChange={(e) => setForm((p) => ({ ...p, typology: e.target.value }))}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
               >
                 <option value="">Select...</option>
                 {typologies.map((t) => (
@@ -265,7 +266,7 @@ export default function KpiEnginePage() {
                 <select
                   value={form.hvac_strategy}
                   onChange={(e) => setForm((p) => ({ ...p, hvac_strategy: e.target.value }))}
-                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                  className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
                 >
                   <option value="">Any</option>
                   {hvacStrategies.map((s) => (
@@ -278,7 +279,7 @@ export default function KpiEnginePage() {
                 <select
                   value={form.sustainability_target}
                   onChange={(e) => setForm((p) => ({ ...p, sustainability_target: e.target.value }))}
-                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                  className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
                 >
                   <option value="">None</option>
                   {sustainabilityTargets.map((s) => (
@@ -291,7 +292,7 @@ export default function KpiEnginePage() {
                 <select
                   value={form.complexity}
                   onChange={(e) => setForm((p) => ({ ...p, complexity: e.target.value }))}
-                  className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                  className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-sm"
                 >
                   <option value="">Any</option>
                   {complexities.map((c) => (
