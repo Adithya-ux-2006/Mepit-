@@ -10,20 +10,6 @@ const securityHeaders = [
   { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
 ];
 
-const productionCsp = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "font-src 'self'",
-  "img-src 'self' data: blob:",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  'upgrade-insecure-requests',
-].join('; ');
-
 const nextConfig: NextConfig = {
   experimental: {
     sri: { algorithm: 'sha256' },
@@ -32,12 +18,7 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
   async headers() {
-    return [{
-      source: '/(.*)',
-      headers: process.env.NODE_ENV === 'production'
-        ? [...securityHeaders, { key: 'Content-Security-Policy', value: productionCsp }]
-        : securityHeaders,
-    }];
+    return [{ source: '/(.*)', headers: securityHeaders }];
   },
 };
 

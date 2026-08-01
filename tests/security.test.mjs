@@ -3,6 +3,7 @@ import test from 'node:test';
 import { canMutateProject, canReadProject } from '../src/lib/project-access.ts';
 import { getOriginRejection } from '../src/lib/request-origin.ts';
 import { hashSecurityKey } from '../src/lib/security-hash.ts';
+import { buildContentSecurityPolicy } from '../src/lib/content-security-policy.ts';
 import { authCredentialsSchema, signupCredentialsSchema } from '../src/lib/auth-validation.ts';
 import { updateProjectSchema } from '../src/lib/project-validation.ts';
 
@@ -61,4 +62,12 @@ test('rate-limit identifiers are deterministic hashes without raw values', () =>
   assert.equal(first, second);
   assert.equal(first.length, 64);
   assert.equal(first.includes('engineer'), false);
+});
+
+
+test('production CSP authorizes only nonce-bearing inline scripts', () => {
+  const policy = buildContentSecurityPolicy('testnonce', false);
+  assert.match(policy, /script-src 'self' 'nonce-testnonce' 'strict-dynamic'/);
+  assert.equal(policy.includes("script-src 'self' 'unsafe-inline'"), false);
+  assert.equal(policy.includes("'unsafe-eval'"), false);
 });
