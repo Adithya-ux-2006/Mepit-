@@ -777,6 +777,9 @@ function CreateProjectForm() {
             ),
           );
           if (firstErrorStep >= 0) setCurrentStep(firstErrorStep);
+        }
+        if (allValidationErrors.length > 0) {
+          setSubmitting(false);
           return;
         }
       }
