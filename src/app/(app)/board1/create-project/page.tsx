@@ -233,6 +233,50 @@ function buildSubmitValidationData(data: FormState): Record<string, unknown> {
   return result;
 }
 
+interface KpiMissingGroup {
+  category: string;
+  fields: { label: string; kpi: string }[];
+}
+
+function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
+  const val = (f: string) => form[f] as number | null;
+  const missing = (f: string) => val(f) == null || val(f) === 0;
+
+  const groups: KpiMissingGroup[] = [];
+
+  // Location — affects benchmarks and similarity matching
+  const locationFields: { label: string; kpi: string }[] = [];
+  if (!form.location_city.trim()) locationFields.push({ label: 'City', kpi: 'location benchmarks & similarity' });
+  if (!form.location_state.trim()) locationFields.push({ label: 'State', kpi: 'location benchmarks & similarity' });
+  if (locationFields.length) groups.push({ category: 'Location', fields: locationFields });
+
+  // HVAC
+  const hvacFields: { label: string; kpi: string }[] = [];
+  if (missing('total_tr')) hvacFields.push({ label: 'Total TR', kpi: 'COOLING_LOAD_DENSITY, KW_PER_TR' });
+  if (missing('total_airflow_cfm')) hvacFields.push({ label: 'Total Airflow (CFM)', kpi: 'CFM_SQFT' });
+  if (missing('lighting_load_w')) hvacFields.push({ label: 'Lighting Load (W)', kpi: 'LIGHTING_W_SQFT' });
+  if (missing('annual_energy_kwh')) hvacFields.push({ label: 'Annual Energy (kWh)', kpi: 'KW_PER_TR, EPI' });
+  if (missing('transformer_capacity_kva')) hvacFields.push({ label: 'Transformer Capacity (kVA)', kpi: 'TRANSFORMER_DENSITY' });
+  if (missing('dg_capacity_kva')) hvacFields.push({ label: 'DG Capacity (kVA)', kpi: 'DG_LOAD_DENSITY, DG_CAPACITY_DENSITY' });
+  if (hvacFields.length) groups.push({ category: 'HVAC & Electrical', fields: hvacFields });
+
+  // Cost
+  const costFields: { label: string; kpi: string }[] = [];
+  if (missing('hvac_cost')) costFields.push({ label: 'HVAC Cost', kpi: 'HVAC_RS_SQFT' });
+  if (missing('electrical_cost')) costFields.push({ label: 'Electrical Cost', kpi: 'ELECTRICAL_RS_SQFT' });
+  if (missing('dg_cost')) costFields.push({ label: 'DG Cost', kpi: 'DG_RS_SQFT' });
+  if (missing('fire_fighting_cost')) costFields.push({ label: 'Fire Fighting Cost', kpi: 'FF_RS_SQFT' });
+  if (missing('stp_cost')) costFields.push({ label: 'STP Cost', kpi: 'STP_RS_SQFT' });
+  if (missing('phe_cost')) costFields.push({ label: 'PHE Cost', kpi: 'PHE_RS_SQFT' });
+  if (missing('bms_cost')) costFields.push({ label: 'BMS Cost', kpi: 'BMS_RS_SQFT' });
+  if (missing('fapa_cost')) costFields.push({ label: 'FAPA Cost', kpi: 'FAPA_RS_SQFT' });
+  if (missing('cctv_cost')) costFields.push({ label: 'CCTV Cost', kpi: 'CCTV_RS_SQFT' });
+  if (missing('total_mep_cost')) costFields.push({ label: 'Total MEP Cost', kpi: 'TOTAL_MEP_RS_SQFT' });
+  if (costFields.length) groups.push({ category: 'Cost Packages', fields: costFields });
+
+  return groups;
+}
+
 function FieldError({ error }: { error?: string }) {
   if (!error) return null;
   return <p className="text-xs text-destructive">{error}</p>;
@@ -421,6 +465,8 @@ function CreateProjectForm() {
   const [lastAutosavedAt, setLastAutosavedAt] = useState<Date | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [refreshingSession, setRefreshingSession] = useState(false);
+  const [kpiWarnings, setKpiWarnings] = useState<KpiMissingGroup[]>([]);
+  const [kpiWarningsConfirmed, setKpiWarningsConfirmed] = useState(false);
   const sourceQueryLoaded = useRef(false);
   const dirtyRef = useRef(false);
   const persistingRef = useRef(false);
@@ -450,6 +496,8 @@ function CreateProjectForm() {
     setForm((prev) => ({ ...prev, [field]: value }));
     setSaveMessage('');
     setError('');
+    setKpiWarnings([]);
+    setKpiWarningsConfirmed(false);
   }, []);
 
   const resetMessages = useCallback(() => {
@@ -707,6 +755,17 @@ function CreateProjectForm() {
       }
 
       if (status === 'submitted') {
+        if (!kpiWarningsConfirmed) {
+          const warnings = buildKpiMissingWarnings(form);
+          if (warnings.length > 0) {
+            if (!silent) {
+              setKpiWarnings(warnings);
+              setSubmitting(false);
+            }
+            return;
+          }
+        }
+
         const allValidationErrors = await runValidation(form);
         const blockingErrors = getRequiredValidationErrors(allValidationErrors);
         if (blockingErrors.length > 0) {
@@ -1357,6 +1416,53 @@ function CreateProjectForm() {
               <p className="mt-4 border-l-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 {saveMessage}
               </p>
+            )}
+
+            {kpiWarnings.length > 0 && (
+              <div className="mt-4 border border-amber-300 bg-amber-50 rounded-lg" role="alert">
+                <div className="border-b border-amber-200 px-4 py-3">
+                  <p className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Missing inputs will limit KPI results
+                  </p>
+                  <p className="mt-1 text-xs text-amber-700">
+                    Some fields are empty. KPIs that depend on them will show &ldquo;Not provided&rdquo; after submission.
+                    You can still submit — filling these in later will enable the full KPI set.
+                  </p>
+                </div>
+                <div className="divide-y divide-amber-200">
+                  {kpiWarnings.map((group) => (
+                    <div key={group.category} className="px-4 py-3">
+                      <p className="text-xs font-medium text-amber-800">{group.category}</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {group.fields.map((f) => (
+                          <li key={f.label} className="text-xs text-amber-700">
+                            <span className="font-medium">{f.label}</span>
+                            <span className="text-amber-600"> — {f.kpi}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 border-t border-amber-200 px-4 py-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => { setKpiWarnings([]); setKpiWarningsConfirmed(true); void persist('submitted'); }}
+                  >
+                    Submit anyway
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setKpiWarnings([])}
+                  >
+                    Go back & fill in
+                  </Button>
+                </div>
+              </div>
             )}
 
             {showValidation && correctionErrors.length > 0 && (
