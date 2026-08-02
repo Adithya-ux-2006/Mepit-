@@ -256,7 +256,6 @@ function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
   if (missing('total_tr')) hvacFields.push({ field: 'total_tr', label: 'Total TR', kpi: 'COOLING_LOAD_DENSITY, KW_PER_TR' });
   if (missing('total_airflow_cfm')) hvacFields.push({ field: 'total_airflow_cfm', label: 'Total Airflow (CFM)', kpi: 'CFM_SQFT' });
   if (missing('lighting_load_w')) hvacFields.push({ field: 'lighting_load_w', label: 'Lighting Load (W/sqft)', kpi: 'LIGHTING_W_SQFT' });
-  if (missing('annual_energy_kwh')) hvacFields.push({ field: 'annual_energy_kwh', label: 'Annual Energy (kWh)', kpi: 'KW_PER_TR, EPI' });
   if (missing('transformer_capacity_kva')) hvacFields.push({ field: 'transformer_capacity_kva', label: 'Transformer Capacity (kVA)', kpi: 'TRANSFORMER_DENSITY' });
   if (missing('dg_capacity_kva')) hvacFields.push({ field: 'dg_capacity_kva', label: 'DG Capacity (kVA)', kpi: 'DG_LOAD_DENSITY, DG_CAPACITY_DENSITY' });
   if (hvacFields.length) groups.push({ category: 'HVAC & Electrical', stepKey: 'electrical-dg', fields: hvacFields });
@@ -1431,22 +1430,39 @@ function CreateProjectForm() {
                     Missing inputs will limit KPI results
                   </p>
                   <p className="mt-1 text-xs text-amber-700">
-                    Some fields are empty. KPIs that depend on them will show &ldquo;Not provided&rdquo; after submission.
-                    You can still submit — filling these in later will enable the full KPI set.
+                    Fill in the fields below, then submit. KPIs that stay empty will show &ldquo;Not provided&rdquo;.
                   </p>
                 </div>
                 <div className="divide-y divide-amber-200">
                   {kpiWarnings.map((group) => (
-                    <div key={group.category} className="px-4 py-3">
+                    <div key={group.category} className="px-4 py-3 space-y-3">
                       <p className="text-xs font-medium text-amber-800">{group.category}</p>
-                      <ul className="mt-1 space-y-0.5">
-                        {group.fields.map((f) => (
-                          <li key={f.label} className="text-xs text-amber-700">
-                            <span className="font-medium">{f.label}</span>
-                            <span className="text-amber-600"> — {f.kpi}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {group.fields.map((f) => {
+                        const meta = PROJECT_INPUT_FIELD_META[f.field as ProjectInputField];
+                        return (
+                          <div key={f.field} className="flex items-center gap-3">
+                            <label className="text-xs text-amber-700 w-44 shrink-0" htmlFor={`kpi-warn-${f.field}`}>
+                              {f.label}
+                              <span className="text-amber-500 ml-1 text-[10px]">{f.kpi}</span>
+                            </label>
+                            <Input
+                              id={`kpi-warn-${f.field}`}
+                              type="number"
+                              className="h-8 w-40 text-sm border-amber-300 bg-white"
+                              value={((form[f.field] as number | null) ?? '') as string | number}
+                              placeholder={meta?.placeholder ?? 'e.g. 100'}
+                              min={meta?.min}
+                              step={meta?.decimals != null ? `0.${'0'.repeat(Math.max(meta.decimals - 1, 0))}1` : undefined}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                if (raw === '') { update(f.field, null); return; }
+                                const n = Number(raw);
+                                if (!Number.isNaN(n)) update(f.field, n);
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
@@ -1456,29 +1472,15 @@ function CreateProjectForm() {
                     size="sm"
                     onClick={() => { setKpiWarnings([]); setKpiWarningsConfirmed(true); void persist('submitted'); }}
                   >
-                    Submit anyway
+                    Submit with these values
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      const firstField = kpiWarnings[0]?.fields[0]?.field;
-                      const targetKey = kpiWarnings[0]?.stepKey;
-                      if (targetKey) {
-                        const idx = FORM_STEPS.findIndex((s) => s.key === targetKey);
-                        if (idx >= 0) setCurrentStep(idx);
-                      }
-                      setKpiWarnings([]);
-                      if (firstField) {
-                        requestAnimationFrame(() => {
-                          const el = document.querySelector(`[data-field="${firstField}"]`);
-                          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        });
-                      }
-                    }}
+                    onClick={() => { setKpiWarnings([]); setKpiWarningsConfirmed(true); void persist('submitted'); }}
                   >
-                    Go back & fill in
+                    Submit anyway (leave empty)
                   </Button>
                 </div>
               </div>
