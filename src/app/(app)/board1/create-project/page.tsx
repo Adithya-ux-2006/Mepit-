@@ -235,6 +235,7 @@ function buildSubmitValidationData(data: FormState): Record<string, unknown> {
 
 interface KpiMissingGroup {
   category: string;
+  stepKey: string;
   fields: { label: string; kpi: string }[];
 }
 
@@ -248,17 +249,17 @@ function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
   const locationFields: { label: string; kpi: string }[] = [];
   if (!form.location_city.trim()) locationFields.push({ label: 'City', kpi: 'location benchmarks & similarity' });
   if (!form.location_state.trim()) locationFields.push({ label: 'State', kpi: 'location benchmarks & similarity' });
-  if (locationFields.length) groups.push({ category: 'Location', fields: locationFields });
+  if (locationFields.length) groups.push({ category: 'Location', stepKey: 'identity', fields: locationFields });
 
   // HVAC
   const hvacFields: { label: string; kpi: string }[] = [];
   if (missing('total_tr')) hvacFields.push({ label: 'Total TR', kpi: 'COOLING_LOAD_DENSITY, KW_PER_TR' });
   if (missing('total_airflow_cfm')) hvacFields.push({ label: 'Total Airflow (CFM)', kpi: 'CFM_SQFT' });
-  if (missing('lighting_load_w')) hvacFields.push({ label: 'Lighting Load (W)', kpi: 'LIGHTING_W_SQFT' });
+  if (missing('lighting_load_w')) hvacFields.push({ label: 'Lighting Load (W/sqft)', kpi: 'LIGHTING_W_SQFT' });
   if (missing('annual_energy_kwh')) hvacFields.push({ label: 'Annual Energy (kWh)', kpi: 'KW_PER_TR, EPI' });
   if (missing('transformer_capacity_kva')) hvacFields.push({ label: 'Transformer Capacity (kVA)', kpi: 'TRANSFORMER_DENSITY' });
   if (missing('dg_capacity_kva')) hvacFields.push({ label: 'DG Capacity (kVA)', kpi: 'DG_LOAD_DENSITY, DG_CAPACITY_DENSITY' });
-  if (hvacFields.length) groups.push({ category: 'HVAC & Electrical', fields: hvacFields });
+  if (hvacFields.length) groups.push({ category: 'HVAC & Electrical', stepKey: 'electrical-dg', fields: hvacFields });
 
   // Cost
   const costFields: { label: string; kpi: string }[] = [];
@@ -272,7 +273,7 @@ function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
   if (missing('fapa_cost')) costFields.push({ label: 'FAPA Cost', kpi: 'FAPA_RS_SQFT' });
   if (missing('cctv_cost')) costFields.push({ label: 'CCTV Cost', kpi: 'CCTV_RS_SQFT' });
   if (missing('total_mep_cost')) costFields.push({ label: 'Total MEP Cost', kpi: 'TOTAL_MEP_RS_SQFT' });
-  if (costFields.length) groups.push({ category: 'Cost Packages', fields: costFields });
+  if (costFields.length) groups.push({ category: 'Cost Packages', stepKey: 'total', fields: costFields });
 
   return groups;
 }
@@ -1457,7 +1458,14 @@ function CreateProjectForm() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => setKpiWarnings([])}
+                    onClick={() => {
+                      const targetKey = kpiWarnings[0]?.stepKey;
+                      if (targetKey) {
+                        const idx = FORM_STEPS.findIndex((s) => s.key === targetKey);
+                        if (idx >= 0) setCurrentStep(idx);
+                      }
+                      setKpiWarnings([]);
+                    }}
                   >
                     Go back & fill in
                   </Button>
