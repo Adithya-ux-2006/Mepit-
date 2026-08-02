@@ -90,6 +90,18 @@ const editableInputKeys = new Set<ProjectInputField>([
   'sustainability_certification',
 ]);
 
+const DIRECT_COST_KPIS = new Set([
+  'HVAC_RS_SQFT', 'ELECTRICAL_RS_SQFT', 'DG_RS_SQFT', 'FF_RS_SQFT',
+  'STP_RS_SQFT', 'PHE_RS_SQFT', 'BMS_RS_SQFT', 'FAPA_RS_SQFT',
+  'CCTV_RS_SQFT', 'TOTAL_MEP_RS_SQFT',
+]);
+
+function getReasonLabel(code: string | undefined, flag: string | null | undefined): string | null {
+  if (!flag) return null;
+  if (flag === 'insufficient_inputs' && code && DIRECT_COST_KPIS.has(code)) return 'Not provided';
+  return 'Insufficient inputs';
+}
+
 function getBenchmark(
   kpiCode: string,
   val: number | null | undefined,
@@ -457,9 +469,12 @@ export default function ProjectDetailPage() {
                               {benchmark.note}
                             </p>
                           )}
-                          {o.reason_flag && (
-                            <p className="text-xs text-amber-600 mt-1">{o.reason_flag}</p>
-                          )}
+                          {(() => {
+                            const reasonLabel = getReasonLabel(formula?.kpi_code, o.reason_flag);
+                            return reasonLabel ? (
+                              <p className="text-xs text-amber-600 mt-1">{reasonLabel}</p>
+                            ) : null;
+                          })()}
                         </div>
                       );
                     })}
