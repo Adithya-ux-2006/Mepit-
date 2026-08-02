@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getProjectDetailBundle, getProjectInputs, getKpiFormulas, upsertProjectInputs, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs } from '@/lib/api';
@@ -117,19 +117,7 @@ interface ValidationRow {
 }
 
 function groupValidationResults(evaluatedErrors: ValidationError[]): ValidationRow[] {
-  const fieldOrder = [
-    'built_up_area', 'carpet_area', 'saleable_area', 'leasable_area',
-    'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
-    'office_area', 'fb_area', 'gross_area',
-    'occupancy_density_office', 'occupancy_density_fb',
-    'total_tr', 'total_airflow_cfm', 'hvac_strategy', 'operating_hours',
-    'transformer_capacity_kva', 'tenant_power_kva', 'common_area_power_kva',
-    'lighting_load_w', 'dg_capacity_kva', 'dg_loading_factor',
-    'annual_energy_kwh',
-    'hvac_cost', 'electrical_cost', 'dg_cost', 'fire_fighting_cost',
-    'stp_cost', 'phe_cost', 'bms_cost', 'fapa_cost', 'cctv_cost',
-    'total_mep_cost',
-  ];
+  const fieldOrder = Array.from(editableInputKeys);
 
   const errorByField = new Map<string, string[]>();
   for (const err of evaluatedErrors) {
@@ -240,8 +228,24 @@ export default function ProjectDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [previewOutputs, setPreviewOutputs] = useState<OutputWithKpi[]>([]);
-  const [, setValidationRules] = useState<ValidationRule[]>([]);
-  const [validationResults, setValidationResults] = useState<ValidationRow[]>([]);
+  const [validationRules, setValidationRules] = useState<ValidationRule[]>([]);
+  const [storedValidationResults, setStoredValidationResults] = useState<ValidationRow[]>([]);
+
+  // When editing, recompute validation live from editForm; otherwise use stored results
+  const validationResults = useMemo(() => {
+    if (!editing || !project || validationRules.length === 0) return storedValidationResults;
+    const formData: Record<string, unknown> = {
+      project_name: project.project_name,
+      typology: project.typology,
+      built_up_area: project.built_up_area,
+      carpet_area: project.carpet_area,
+      saleable_area: project.saleable_area,
+      leasable_area: project.leasable_area,
+      ...editForm,
+    };
+    const evaluatedErrors = evaluateValidationRules(formData, validationRules);
+    return groupValidationResults(evaluatedErrors);
+  }, [editing, editForm, project, validationRules, storedValidationResults]);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const { user } = useAuth();
 
@@ -267,9 +271,10 @@ export default function ProjectDetailPage() {
             ...Object.fromEntries(
               Object.entries(i).filter(([k]) => !['id', 'project_id', 'extended_fields'].includes(k))
             ),
+            ...(i.extended_fields as Record<string, unknown> ?? {}),
           };
           const evaluatedErrors = evaluateValidationRules(formData, rules);
-          setValidationResults(groupValidationResults(evaluatedErrors));
+          setStoredValidationResults(groupValidationResults(evaluatedErrors));
         }
 
         // Preview KPIs for submitted/under_review projects (not yet approved)

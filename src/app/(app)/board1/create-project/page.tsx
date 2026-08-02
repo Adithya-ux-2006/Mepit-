@@ -256,6 +256,7 @@ function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
   if (missing('total_tr')) hvacFields.push({ field: 'total_tr', label: 'Total TR', kpi: 'COOLING_LOAD_DENSITY, KW_PER_TR' });
   if (missing('total_airflow_cfm')) hvacFields.push({ field: 'total_airflow_cfm', label: 'Total Airflow (CFM)', kpi: 'CFM_SQFT' });
   if (missing('lighting_load_w')) hvacFields.push({ field: 'lighting_load_w', label: 'Lighting Load (W/sqft)', kpi: 'LIGHTING_W_SQFT' });
+  if (missing('annual_energy_kwh')) hvacFields.push({ field: 'annual_energy_kwh', label: 'Annual Energy Consumption (kWh)', kpi: 'KW_PER_TR, EPI' });
   if (missing('transformer_capacity_kva')) hvacFields.push({ field: 'transformer_capacity_kva', label: 'Transformer Capacity (kVA)', kpi: 'TRANSFORMER_DENSITY' });
   if (missing('dg_capacity_kva')) hvacFields.push({ field: 'dg_capacity_kva', label: 'DG Capacity (kVA)', kpi: 'DG_LOAD_DENSITY, DG_CAPACITY_DENSITY' });
   if (hvacFields.length) groups.push({ category: 'HVAC & Electrical', stepKey: 'electrical-dg', fields: hvacFields });

@@ -106,7 +106,7 @@ const EXISTING_FIELD_META: Record<string, ProjectInputFieldMeta> = {
   lighting_load_w: { label: 'Lighting Load', unit: 'W/sqft', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 0.6 - 0.8' },
   dg_capacity_kva: { label: 'DG Capacity', unit: 'kVA', kind: 'number', min: 0 },
   dg_loading_factor: { label: 'DG Loading Factor', unit: '0-1', kind: 'number', min: 0, decimals: 2 },
-  annual_energy_kwh: { label: 'Annual Energy', unit: 'kWh', kind: 'number', min: 0 },
+  annual_energy_kwh: { label: 'Annual Energy Consumption', unit: 'kWh', kind: 'number', min: 0, placeholder: 'Used for KW/TR and EPI KPI calculations' },
   hvac_cost: { label: 'HVAC Cost', unit: '₹/Sq.ft (BUA)', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 275.50' },
   electrical_cost: { label: 'Electrical Cost', unit: '₹/Sq.ft (BUA)', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 260.00' },
   dg_cost: { label: 'DG Cost', unit: '₹/Sq.ft (BUA)', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 45.25' },
@@ -117,7 +117,7 @@ const EXISTING_FIELD_META: Record<string, ProjectInputFieldMeta> = {
   fapa_cost: { label: 'FAPA Cost', unit: '₹/Sq.ft (BUA)', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 35.00' },
   cctv_cost: { label: 'CCTV Cost', unit: '₹/Sq.ft (BUA)', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 35.00' },
   total_mep_cost: { label: 'Total MEP Cost', unit: '₹/Sq.ft (BUA)', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 812.75' },
-  operating_hours: { label: 'Operating Hours', unit: 'hrs/yr', kind: 'number', min: 0 },
+  operating_hours: { label: 'Operating Hours', unit: 'hrs/yr', kind: 'number', min: 0, placeholder: 'Default: 3,000 hrs/yr' },
 };
 
 // ============================================================================
@@ -277,8 +277,8 @@ const EXTENDED_FIELD_META: Record<ExtendedFieldKey, ProjectInputFieldMeta> = {
   sustainability_certification: { label: 'Sustainability / LEED / IGBC / USGBC / WELL', kind: 'text' },
 
   // Energy (also stored in extended_fields for backward compat)
-  annual_energy_kwh: { label: 'Annual Energy', unit: 'kWh', kind: 'number', min: 0 },
-  operating_hours: { label: 'Operating Hours', unit: 'hrs/yr', kind: 'number', min: 0 },
+  annual_energy_kwh: { label: 'Annual Energy Consumption', unit: 'kWh', kind: 'number', min: 0, placeholder: 'Used for KW/TR and EPI KPI calculations' },
+  operating_hours: { label: 'Operating Hours', unit: 'hrs/yr', kind: 'number', min: 0, placeholder: 'Default: 3,000 hrs/yr' },
 };
 
 // ============================================================================
@@ -472,6 +472,7 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
       'solar_panel_capacity', 'solar_panel_pct',
       'car_park_charging', 'car_charging_pct',
       'baseline_epi', 'epi_superstructure', 'epi_bua',
+      'annual_energy_kwh', 'operating_hours',
     ],
     subGroups: [
       {
