@@ -27,7 +27,7 @@ import {
   type ProjectInputField,
   type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
-import { evaluateValidationRules } from '@/lib/validation-engine';
+import { evaluateValidationRules, type ValidationError } from '@/lib/validation-engine';
 import { getProjectStageLabel } from '@/lib/project-stages';
 
 interface OutputWithKpi extends ProjectKpiOutput {
@@ -89,6 +89,77 @@ const editableInputKeys = new Set<ProjectInputField>([
   'punched_windows', 'wwr', 'facade_power_controller',
   'sustainability_certification',
 ]);
+
+const projectFieldLabels: Record<string, string> = {
+  project_name: 'Project Name',
+  typology: 'Typology',
+  location_city: 'City',
+  location_state: 'State',
+  project_year: 'Project Year',
+  built_up_area: 'Built Up Area',
+  carpet_area: 'Carpet Area',
+  saleable_area: 'Saleable Area',
+  leasable_area: 'Leasable Area',
+};
+
+function getFieldLabel(field: string): string {
+  if (projectFieldLabels[field]) return projectFieldLabels[field];
+  const meta = PROJECT_INPUT_FIELD_META[field as ProjectInputField];
+  if (meta) return meta.label;
+  return field.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+interface ValidationRow {
+  field: string;
+  label: string;
+  passed: boolean;
+  messages: string[];
+}
+
+function groupValidationResults(evaluatedErrors: ValidationError[]): ValidationRow[] {
+  const fieldOrder = [
+    'built_up_area', 'carpet_area', 'saleable_area', 'leasable_area',
+    'plant_room_area', 'leasable_plant_room_area', 'shaft_area',
+    'office_area', 'fb_area', 'gross_area',
+    'occupancy_density_office', 'occupancy_density_fb',
+    'total_tr', 'total_airflow_cfm', 'hvac_strategy', 'operating_hours',
+    'transformer_capacity_kva', 'tenant_power_kva', 'common_area_power_kva',
+    'lighting_load_w', 'dg_capacity_kva', 'dg_loading_factor',
+    'annual_energy_kwh',
+    'hvac_cost', 'electrical_cost', 'dg_cost', 'fire_fighting_cost',
+    'stp_cost', 'phe_cost', 'bms_cost', 'fapa_cost', 'cctv_cost',
+    'total_mep_cost',
+  ];
+
+  const errorByField = new Map<string, string[]>();
+  for (const err of evaluatedErrors) {
+    const existing = errorByField.get(err.field) ?? [];
+    if (!existing.includes(err.error_message)) existing.push(err.error_message);
+    errorByField.set(err.field, existing);
+  }
+
+  const rows: ValidationRow[] = [];
+  const seen = new Set<string>();
+
+  for (const field of fieldOrder) {
+    seen.add(field);
+    const msgs = errorByField.get(field);
+    if (msgs) {
+      rows.push({ field, label: getFieldLabel(field), passed: false, messages: msgs });
+    } else {
+      rows.push({ field, label: getFieldLabel(field), passed: true, messages: [] });
+    }
+  }
+
+  for (const [field, msgs] of errorByField) {
+    if (!seen.has(field)) {
+      seen.add(field);
+      rows.push({ field, label: getFieldLabel(field), passed: false, messages: msgs });
+    }
+  }
+
+  return rows;
+}
 
 const DIRECT_COST_KPIS = new Set([
   'HVAC_RS_SQFT', 'ELECTRICAL_RS_SQFT', 'DG_RS_SQFT', 'FF_RS_SQFT',
@@ -170,7 +241,7 @@ export default function ProjectDetailPage() {
   const [saveError, setSaveError] = useState('');
   const [previewOutputs, setPreviewOutputs] = useState<OutputWithKpi[]>([]);
   const [, setValidationRules] = useState<ValidationRule[]>([]);
-  const [validationResults, setValidationResults] = useState<{ field: string; passed: boolean; message: string }[]>([]);
+  const [validationResults, setValidationResults] = useState<ValidationRow[]>([]);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const { user } = useAuth();
 
@@ -198,20 +269,7 @@ export default function ProjectDetailPage() {
             ),
           };
           const evaluatedErrors = evaluateValidationRules(formData, rules);
-          const results = rules.map((r) => ({
-            field: r.field_name,
-            passed: !evaluatedErrors.some((entry) => (
-              entry.field === r.field_name &&
-              entry.rule_type === r.rule_type &&
-              entry.error_message === r.error_message
-            )),
-            message: evaluatedErrors.find((entry) => (
-              entry.field === r.field_name &&
-              entry.rule_type === r.rule_type &&
-              entry.error_message === r.error_message
-            ))?.error_message ?? 'Passed',
-          }));
-          setValidationResults(results);
+          setValidationResults(groupValidationResults(evaluatedErrors));
         }
 
         // Preview KPIs for submitted/under_review projects (not yet approved)
@@ -406,7 +464,7 @@ export default function ProjectDetailPage() {
       </Card>
 
       {/* Validation Results */}
-      {validationResults.length > 0 && (
+      {validationResults.length > 0 && validationResults.some((r) => !r.passed) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -418,11 +476,15 @@ export default function ProjectDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1.5">
-              {validationResults.map((r, index) => (
-                <div key={`${r.field}-${index}`} className="flex items-center gap-2 text-xs">
-                  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${r.passed ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <span className="font-mono text-muted-foreground w-40 shrink-0">{r.field}</span>
-                  <span className={r.passed ? 'text-green-700' : 'text-red-600'}>{r.message}</span>
+              {validationResults.filter((r) => !r.passed).map((r) => (
+                <div key={r.field} className="flex items-start gap-2 text-xs">
+                  <span className="inline-block w-2 h-2 rounded-full shrink-0 mt-0.5 bg-red-500" />
+                  <span className="font-medium text-muted-foreground w-44 shrink-0">{r.label}</span>
+                  <ul className="space-y-0.5">
+                    {r.messages.map((msg) => (
+                      <li key={msg} className="text-red-600">{msg}</li>
+                    ))}
+                  </ul>
                 </div>
               ))}
             </div>
