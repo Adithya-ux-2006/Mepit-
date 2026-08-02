@@ -236,7 +236,7 @@ function buildSubmitValidationData(data: FormState): Record<string, unknown> {
 interface KpiMissingGroup {
   category: string;
   stepKey: string;
-  fields: { label: string; kpi: string }[];
+  fields: { field: string; label: string; kpi: string }[];
 }
 
 function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
@@ -246,33 +246,33 @@ function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
   const groups: KpiMissingGroup[] = [];
 
   // Location — affects benchmarks and similarity matching
-  const locationFields: { label: string; kpi: string }[] = [];
-  if (!form.location_city.trim()) locationFields.push({ label: 'City', kpi: 'location benchmarks & similarity' });
-  if (!form.location_state.trim()) locationFields.push({ label: 'State', kpi: 'location benchmarks & similarity' });
+  const locationFields: { field: string; label: string; kpi: string }[] = [];
+  if (!form.location_city.trim()) locationFields.push({ field: 'location_city', label: 'City', kpi: 'location benchmarks & similarity' });
+  if (!form.location_state.trim()) locationFields.push({ field: 'location_state', label: 'State', kpi: 'location benchmarks & similarity' });
   if (locationFields.length) groups.push({ category: 'Location', stepKey: 'identity', fields: locationFields });
 
   // HVAC
-  const hvacFields: { label: string; kpi: string }[] = [];
-  if (missing('total_tr')) hvacFields.push({ label: 'Total TR', kpi: 'COOLING_LOAD_DENSITY, KW_PER_TR' });
-  if (missing('total_airflow_cfm')) hvacFields.push({ label: 'Total Airflow (CFM)', kpi: 'CFM_SQFT' });
-  if (missing('lighting_load_w')) hvacFields.push({ label: 'Lighting Load (W/sqft)', kpi: 'LIGHTING_W_SQFT' });
-  if (missing('annual_energy_kwh')) hvacFields.push({ label: 'Annual Energy (kWh)', kpi: 'KW_PER_TR, EPI' });
-  if (missing('transformer_capacity_kva')) hvacFields.push({ label: 'Transformer Capacity (kVA)', kpi: 'TRANSFORMER_DENSITY' });
-  if (missing('dg_capacity_kva')) hvacFields.push({ label: 'DG Capacity (kVA)', kpi: 'DG_LOAD_DENSITY, DG_CAPACITY_DENSITY' });
+  const hvacFields: { field: string; label: string; kpi: string }[] = [];
+  if (missing('total_tr')) hvacFields.push({ field: 'total_tr', label: 'Total TR', kpi: 'COOLING_LOAD_DENSITY, KW_PER_TR' });
+  if (missing('total_airflow_cfm')) hvacFields.push({ field: 'total_airflow_cfm', label: 'Total Airflow (CFM)', kpi: 'CFM_SQFT' });
+  if (missing('lighting_load_w')) hvacFields.push({ field: 'lighting_load_w', label: 'Lighting Load (W/sqft)', kpi: 'LIGHTING_W_SQFT' });
+  if (missing('annual_energy_kwh')) hvacFields.push({ field: 'annual_energy_kwh', label: 'Annual Energy (kWh)', kpi: 'KW_PER_TR, EPI' });
+  if (missing('transformer_capacity_kva')) hvacFields.push({ field: 'transformer_capacity_kva', label: 'Transformer Capacity (kVA)', kpi: 'TRANSFORMER_DENSITY' });
+  if (missing('dg_capacity_kva')) hvacFields.push({ field: 'dg_capacity_kva', label: 'DG Capacity (kVA)', kpi: 'DG_LOAD_DENSITY, DG_CAPACITY_DENSITY' });
   if (hvacFields.length) groups.push({ category: 'HVAC & Electrical', stepKey: 'electrical-dg', fields: hvacFields });
 
   // Cost
-  const costFields: { label: string; kpi: string }[] = [];
-  if (missing('hvac_cost')) costFields.push({ label: 'HVAC Cost', kpi: 'HVAC_RS_SQFT' });
-  if (missing('electrical_cost')) costFields.push({ label: 'Electrical Cost', kpi: 'ELECTRICAL_RS_SQFT' });
-  if (missing('dg_cost')) costFields.push({ label: 'DG Cost', kpi: 'DG_RS_SQFT' });
-  if (missing('fire_fighting_cost')) costFields.push({ label: 'Fire Fighting Cost', kpi: 'FF_RS_SQFT' });
-  if (missing('stp_cost')) costFields.push({ label: 'STP Cost', kpi: 'STP_RS_SQFT' });
-  if (missing('phe_cost')) costFields.push({ label: 'PHE Cost', kpi: 'PHE_RS_SQFT' });
-  if (missing('bms_cost')) costFields.push({ label: 'BMS Cost', kpi: 'BMS_RS_SQFT' });
-  if (missing('fapa_cost')) costFields.push({ label: 'FAPA Cost', kpi: 'FAPA_RS_SQFT' });
-  if (missing('cctv_cost')) costFields.push({ label: 'CCTV Cost', kpi: 'CCTV_RS_SQFT' });
-  if (missing('total_mep_cost')) costFields.push({ label: 'Total MEP Cost', kpi: 'TOTAL_MEP_RS_SQFT' });
+  const costFields: { field: string; label: string; kpi: string }[] = [];
+  if (missing('hvac_cost')) costFields.push({ field: 'hvac_cost', label: 'HVAC Cost', kpi: 'HVAC_RS_SQFT' });
+  if (missing('electrical_cost')) costFields.push({ field: 'electrical_cost', label: 'Electrical Cost', kpi: 'ELECTRICAL_RS_SQFT' });
+  if (missing('dg_cost')) costFields.push({ field: 'dg_cost', label: 'DG Cost', kpi: 'DG_RS_SQFT' });
+  if (missing('fire_fighting_cost')) costFields.push({ field: 'fire_fighting_cost', label: 'Fire Fighting Cost', kpi: 'FF_RS_SQFT' });
+  if (missing('stp_cost')) costFields.push({ field: 'stp_cost', label: 'STP Cost', kpi: 'STP_RS_SQFT' });
+  if (missing('phe_cost')) costFields.push({ field: 'phe_cost', label: 'PHE Cost', kpi: 'PHE_RS_SQFT' });
+  if (missing('bms_cost')) costFields.push({ field: 'bms_cost', label: 'BMS Cost', kpi: 'BMS_RS_SQFT' });
+  if (missing('fapa_cost')) costFields.push({ field: 'fapa_cost', label: 'FAPA Cost', kpi: 'FAPA_RS_SQFT' });
+  if (missing('cctv_cost')) costFields.push({ field: 'cctv_cost', label: 'CCTV Cost', kpi: 'CCTV_RS_SQFT' });
+  if (missing('total_mep_cost')) costFields.push({ field: 'total_mep_cost', label: 'Total MEP Cost', kpi: 'TOTAL_MEP_RS_SQFT' });
   if (costFields.length) groups.push({ category: 'Cost Packages', stepKey: 'total', fields: costFields });
 
   return groups;
@@ -957,7 +957,11 @@ function CreateProjectForm() {
     computedMap: Map<string, ComputedFieldDef>,
   ) => fields
     .filter((field) => !computedMap.has(field))
-    .map((field) => renderField(field, computedMap));
+    .map((field) => (
+      <div key={field} data-field={field}>
+        {renderField(field, computedMap)}
+      </div>
+    ));
 
   const renderCalculatedFields = (
     fields: readonly ProjectInputField[],
@@ -1459,12 +1463,19 @@ function CreateProjectForm() {
                     size="sm"
                     variant="outline"
                     onClick={() => {
+                      const firstField = kpiWarnings[0]?.fields[0]?.field;
                       const targetKey = kpiWarnings[0]?.stepKey;
                       if (targetKey) {
                         const idx = FORM_STEPS.findIndex((s) => s.key === targetKey);
                         if (idx >= 0) setCurrentStep(idx);
                       }
                       setKpiWarnings([]);
+                      if (firstField) {
+                        requestAnimationFrame(() => {
+                          const el = document.querySelector(`[data-field="${firstField}"]`);
+                          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        });
+                      }
                     }}
                   >
                     Go back & fill in
