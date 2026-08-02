@@ -103,7 +103,7 @@ const EXISTING_FIELD_META: Record<string, ProjectInputFieldMeta> = {
   transformer_capacity_kva: { label: 'Transformer Capacity', unit: 'kVA', kind: 'number', min: 0 },
   tenant_power_kva: { label: 'Tenant Power', unit: 'kVA', kind: 'number', min: 0 },
   common_area_power_kva: { label: 'Common Area Power', unit: 'kVA', kind: 'number', min: 0 },
-  lighting_load_w: { label: 'Lighting Load', unit: 'W', kind: 'number', min: 0 },
+  lighting_load_w: { label: 'Lighting Load', unit: 'W/sqft', kind: 'number', min: 0, decimals: 2, placeholder: 'e.g. 0.6 - 0.8' },
   dg_capacity_kva: { label: 'DG Capacity', unit: 'kVA', kind: 'number', min: 0 },
   dg_loading_factor: { label: 'DG Loading Factor', unit: '0-1', kind: 'number', min: 0, decimals: 2 },
   annual_energy_kwh: { label: 'Annual Energy', unit: 'kWh', kind: 'number', min: 0 },
