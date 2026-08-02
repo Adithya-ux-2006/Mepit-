@@ -12,6 +12,8 @@ import {
   getProjectInputs,
   getProjects,
   updateProject,
+  isSessionExpiredError,
+  refreshSession,
   type ValidationError,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -23,7 +25,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Calculator, ChevronLeft, ChevronRight, Clock3, Save } from 'lucide-react';
+import {
+  AlertTriangle,
+  Calculator,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  LogIn,
+  RefreshCw,
+  Save,
+} from 'lucide-react';
 import {
   COST_FIELDS,
   ENGINEERING_SERVICE_GROUPS,
@@ -146,6 +157,7 @@ const typologies = [
 ];
 
 const AUTOSAVE_INTERVAL_MS = 120_000;
+const SESSION_REFRESH_INTERVAL_MS = 45 * 60_000;
 const LOCAL_DRAFT_VERSION = 1;
 
 interface FormStep {
@@ -407,6 +419,8 @@ function CreateProjectForm() {
   const [draftReady, setDraftReady] = useState(false);
   const [draftRecovered, setDraftRecovered] = useState(false);
   const [lastAutosavedAt, setLastAutosavedAt] = useState<Date | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [refreshingSession, setRefreshingSession] = useState(false);
   const sourceQueryLoaded = useRef(false);
   const dirtyRef = useRef(false);
   const persistingRef = useRef(false);
@@ -577,6 +591,20 @@ function CreateProjectForm() {
     }
   }, [draftKey]);
 
+  const refreshActiveSession = useCallback(async () => {
+    setRefreshingSession(true);
+    try {
+      const refreshed = await refreshSession();
+      setSessionExpired(!refreshed);
+      return refreshed;
+    } catch {
+      setSessionExpired(true);
+      return false;
+    } finally {
+      setRefreshingSession(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user || loadingProject || draftReady) return;
     let cancelled = false;
@@ -628,6 +656,25 @@ function CreateProjectForm() {
       document.removeEventListener('visibilitychange', preserveHiddenDraft);
     };
   }, [draftReady, writeLocalDraft]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = window.setInterval(() => {
+      void refreshActiveSession();
+    }, SESSION_REFRESH_INTERVAL_MS);
+    const refreshAfterLogin = () => {
+      if (document.visibilityState === 'visible' && sessionExpired) {
+        void refreshActiveSession();
+      }
+    };
+    document.addEventListener('visibilitychange', refreshAfterLogin);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshAfterLogin);
+    };
+  }, [refreshActiveSession, sessionExpired, user]);
 
   const persist = async (
     status: 'draft' | 'submitted',
@@ -744,6 +791,12 @@ function CreateProjectForm() {
         ? 'Autosaved to the project draft.'
         : 'Draft saved. You can continue editing without losing the rest of the form.');
     } catch (err: unknown) {
+      writeLocalDraft(false);
+      if (isSessionExpiredError(err)) {
+        setSessionExpired(true);
+        if (!silent) setError('');
+        return;
+      }
       if (!silent) {
         const message = err instanceof Error ? err.message : 'Operation failed';
         const inputErrors = parseProjectFormApiError(message);
@@ -1084,6 +1137,44 @@ function CreateProjectForm() {
       {draftRecovered && (
         <div className="border-l-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           Recovered your autosaved work from this browser.
+        </div>
+      )}
+
+      {sessionExpired && (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-amber-950 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex min-w-0 items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+            <div>
+              <p className="text-sm font-medium">Your session has expired.</p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Your work is saved in this browser. Sign in again in a new tab, then return here to continue saving.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => window.open('/login', '_blank', 'noopener,noreferrer')}
+            >
+              <LogIn className="h-4 w-4" />
+              Sign in again
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={refreshingSession}
+              onClick={() => void refreshActiveSession()}
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshingSession ? 'animate-spin' : ''}`} />
+              Check session
+            </Button>
+          </div>
         </div>
       )}
 

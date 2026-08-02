@@ -19,6 +19,14 @@ import type {
   User,
   ProjectStage,
 } from '@/types';
+import { fetchWithSessionRetry } from '@/lib/session-fetch';
+
+export {
+  SESSION_EXPIRED,
+  SessionExpiredError,
+  isSessionExpiredError,
+  refreshSession,
+} from '@/lib/session-fetch';
 
 // Re-export pure functions that don't need DB access
 export { runFormulaEngine, calculateSimilarity } from '@/lib/engineering';
@@ -28,7 +36,7 @@ export { runFormulaEngine, calculateSimilarity } from '@/lib/engineering';
 // ============================================================================
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetchWithSessionRetry(path, {
     ...options,
     credentials: 'include', // send __session cookie
     headers: {
@@ -47,14 +55,6 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return text ? JSON.parse(text) : ({} as T);
 }
 
-async function refreshSession(): Promise<boolean> {
-  const res = await fetch('/api/auth/refresh', {
-    method: 'POST',
-    credentials: 'include',
-  });
-
-  return res.ok;
-}
 
 // ============================================================================
 // USERS
@@ -74,18 +74,7 @@ export async function upsertUser(input: Partial<User>): Promise<User> {
 
 /** Get or create the current user based on the session cookie. */
 export async function getCurrentUser(): Promise<User | null> {
-  try {
-    return await apiFetch<User>('/api/users/me');
-  } catch {
-    const refreshed = await refreshSession().catch(() => false);
-    if (!refreshed) return null;
-
-    try {
-      return await apiFetch<User>('/api/users/me');
-    } catch {
-      return null;
-    }
-  }
+  return apiFetch<User>('/api/users/me');
 }
 
 export interface DashboardData {
