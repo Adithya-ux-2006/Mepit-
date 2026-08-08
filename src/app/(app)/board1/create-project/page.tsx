@@ -34,6 +34,7 @@ import {
   LogIn,
   RefreshCw,
   Save,
+  X,
 } from 'lucide-react';
 import {
   COST_FIELDS,
@@ -63,7 +64,7 @@ interface FormState {
   location_city: string;
   location_state: string;
   project_year: number;
-  // Area fields (moved from Project Identity to Area & Building section)
+  // Area fields (moved from Project Identity to Architectural Parameters section)
   built_up_area: number | null;
   carpet_area: number | null;
   saleable_area: number | null;
@@ -266,7 +267,7 @@ function buildKpiMissingWarnings(form: FormState): KpiMissingGroup[] {
   if (missing('hvac_cost')) costFields.push({ field: 'hvac_cost', label: 'HVAC Cost', kpi: 'HVAC_RS_SQFT' });
   if (missing('electrical_cost')) costFields.push({ field: 'electrical_cost', label: 'Electrical Cost', kpi: 'ELECTRICAL_RS_SQFT' });
   if (missing('dg_cost')) costFields.push({ field: 'dg_cost', label: 'DG Cost', kpi: 'DG_RS_SQFT' });
-  if (missing('fire_fighting_cost')) costFields.push({ field: 'fire_fighting_cost', label: 'Fire Fighting Cost', kpi: 'FF_RS_SQFT' });
+  if (missing('fire_fighting_cost')) costFields.push({ field: 'fire_fighting_cost', label: 'Fire Protection Cost', kpi: 'FF_RS_SQFT' });
   if (missing('stp_cost')) costFields.push({ field: 'stp_cost', label: 'STP Cost', kpi: 'STP_RS_SQFT' });
   if (missing('phe_cost')) costFields.push({ field: 'phe_cost', label: 'PHE Cost', kpi: 'PHE_RS_SQFT' });
   if (missing('bms_cost')) costFields.push({ field: 'bms_cost', label: 'BMS Cost', kpi: 'BMS_RS_SQFT' });
@@ -432,6 +433,69 @@ function TextField({
         className={`h-8 text-sm ${error ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
       />
       <FieldError error={error} />
+    </div>
+  );
+}
+
+interface RepeatableEntry {
+  [key: string]: string | number | null;
+}
+
+function RepeatableGroup({
+  label,
+  entries,
+  onChange,
+  columns,
+}: {
+  label: string;
+  entries: RepeatableEntry[];
+  onChange: (entries: RepeatableEntry[]) => void;
+  columns: { key: string; label: string; type?: 'text' | 'number' }[];
+}) {
+  const addEntry = () => {
+    const newEntry: RepeatableEntry = {};
+    for (const col of columns) {
+      newEntry[col.key] = col.type === 'number' ? null : '';
+    }
+    onChange([...entries, newEntry]);
+  };
+  const removeEntry = (index: number) => {
+    onChange(entries.filter((_, i) => i !== index));
+  };
+  const updateEntry = (index: number, key: string, value: string | number | null) => {
+    const updated = entries.map((e, i) => (i === index ? { ...e, [key]: value } : e));
+    onChange(updated);
+  };
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      {entries.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">No entries added.</p>
+      )}
+      {entries.map((entry, idx) => (
+        <div key={idx} className="flex flex-wrap items-end gap-2 rounded border border-input p-2">
+          {columns.map((col) => (
+            <div key={col.key} className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">{col.label}</Label>
+              <Input
+                type={col.type === 'number' ? 'number' : 'text'}
+                value={entry[col.key] == null ? '' : String(entry[col.key])}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateEntry(idx, col.key, col.type === 'number' ? (v === '' ? null : Number(v)) : v);
+                }}
+                className="h-7 w-28 text-xs"
+              />
+            </div>
+          ))}
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeEntry(idx)}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" className="text-xs" onClick={addEntry}>
+        + Add Entry
+      </Button>
     </div>
   );
 }
@@ -939,6 +1003,49 @@ function CreateProjectForm() {
       );
     }
 
+    if (meta.kind === 'repeatable') {
+      const entries = (Array.isArray(form[field]) ? form[field] : []) as RepeatableEntry[];
+      const columnMap: Record<string, { key: string; label: string; type?: 'text' | 'number' }[]> = {
+        additional_spaces: [
+          { key: 'name', label: 'Name', type: 'text' },
+          { key: 'area', label: 'Area (sq. ft)', type: 'number' },
+        ],
+        chiller_units_water: [
+          { key: 'nos', label: 'Nos', type: 'number' },
+          { key: 'type', label: 'Type', type: 'text' },
+          { key: 'cop', label: 'COP', type: 'number' },
+          { key: 'refrigerant', label: 'Refrigerant', type: 'text' },
+          { key: 'working_standby', label: 'Working/Standby', type: 'text' },
+        ],
+        chiller_units_air: [
+          { key: 'nos', label: 'Nos', type: 'number' },
+          { key: 'type', label: 'Type', type: 'text' },
+          { key: 'cop', label: 'COP', type: 'number' },
+          { key: 'refrigerant', label: 'Refrigerant', type: 'text' },
+          { key: 'working_standby', label: 'Working/Standby', type: 'text' },
+        ],
+        glazing_types: [
+          { key: 'description', label: 'Description', type: 'text' },
+          { key: 'u_value', label: 'U Value', type: 'number' },
+          { key: 'shgc', label: 'SHGC', type: 'number' },
+          { key: 'vlt', label: 'VLT (%)', type: 'number' },
+        ],
+        custom_certifications: [
+          { key: 'name', label: 'Certification Name', type: 'text' },
+        ],
+      };
+      const columns = columnMap[field] ?? [];
+      return (
+        <RepeatableGroup
+          key={field}
+          label={meta.label}
+          entries={entries}
+          onChange={(newEntries) => update(field, newEntries)}
+          columns={columns}
+        />
+      );
+    }
+
     return (
       <NumField
         key={field}
@@ -1060,8 +1167,8 @@ function CreateProjectForm() {
   const areaInputs = (
     <div className="mb-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
       <NumField
-        label="Total BUA"
-        unit="sqft"
+        label="Total Built Up Area"
+        unit="sq. ft"
         value={form.built_up_area}
         onChange={(value) => update('built_up_area', value)}
         min={0}
@@ -1069,7 +1176,7 @@ function CreateProjectForm() {
       />
       <NumField
         label="Carpet Area"
-        unit="sqft"
+        unit="sq. ft"
         value={form.carpet_area}
         onChange={(value) => update('carpet_area', value)}
         min={0}
@@ -1077,7 +1184,7 @@ function CreateProjectForm() {
       />
       <NumField
         label="Saleable Area"
-        unit="sqft"
+        unit="sq. ft"
         value={form.saleable_area}
         onChange={(value) => update('saleable_area', value)}
         min={0}
@@ -1085,7 +1192,7 @@ function CreateProjectForm() {
       />
       <NumField
         label="Leasable Area"
-        unit="sqft"
+        unit="sq. ft"
         value={form.leasable_area}
         onChange={(value) => update('leasable_area', value)}
         min={0}
@@ -1097,8 +1204,8 @@ function CreateProjectForm() {
     const errorMessage = fieldErrorMap[field];
     const textFields: Record<string, { label: string; placeholder?: string }> = {
       project_name: { label: 'Project Name', placeholder: 'e.g. Green Tower Office' },
-      location_city: { label: 'City', placeholder: 'e.g. Mumbai' },
-      location_state: { label: 'State', placeholder: 'e.g. Maharashtra' },
+      location_city: { label: 'City', placeholder: 'Mumbai' },
+      location_state: { label: 'State', placeholder: 'Maharashtra' },
     };
     if (textFields[field]) {
       return (
@@ -1148,7 +1255,7 @@ function CreateProjectForm() {
     }
 
     const areaFields: Record<string, string> = {
-      built_up_area: 'Total BUA',
+      built_up_area: 'Total Built Up Area',
       carpet_area: 'Carpet Area',
       saleable_area: 'Saleable Area',
       leasable_area: 'Leasable Area',
@@ -1157,7 +1264,7 @@ function CreateProjectForm() {
       return (
         <NumField
           label={areaFields[field]}
-          unit="sqft"
+          unit="sq. ft"
           value={(form[field] as number | null) ?? null}
           onChange={(value) => update(field, value)}
           min={0}
@@ -1366,7 +1473,7 @@ function CreateProjectForm() {
                         value={form.location_city}
                         disabled={identityLocked}
                         onChange={(event) => update('location_city', event.target.value)}
-                        placeholder="e.g. Mumbai"
+                        placeholder="Mumbai"
                         className={'h-8 text-sm ' + (fieldErrorMap.location_city ? 'border-destructive focus-visible:ring-destructive/30' : '')}
                       />
                       <FieldError error={fieldErrorMap.location_city} />
@@ -1377,7 +1484,7 @@ function CreateProjectForm() {
                         value={form.location_state}
                         disabled={identityLocked}
                         onChange={(event) => update('location_state', event.target.value)}
-                        placeholder="e.g. Maharashtra"
+                        placeholder="Maharashtra"
                         className="h-8 text-sm"
                       />
                     </div>
@@ -1400,14 +1507,56 @@ function CreateProjectForm() {
 
                 {activeStep.key === 'total' && (
                   <>
+                    <div className="mb-6">
+                      <h3 className="text-sm font-semibold mb-3">Cost Summary (Rs/sq. ft BUA)</h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-border">
+                              <th className="text-left py-2 pr-4 text-xs font-medium text-muted-foreground">Discipline</th>
+                              <th className="text-right py-2 px-4 text-xs font-medium text-muted-foreground">Cost (₹/Sq. ft)</th>
+                              <th className="text-right py-2 pl-4 text-xs font-medium text-muted-foreground">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[
+                              { field: 'hvac_cost', label: 'HVAC' },
+                              { field: 'electrical_cost', label: 'Electrical' },
+                              { field: 'dg_cost', label: 'DG' },
+                              { field: 'fire_fighting_cost', label: 'Fire Protection' },
+                              { field: 'stp_cost', label: 'STP' },
+                              { field: 'phe_cost', label: 'PHE' },
+                              { field: 'bms_cost', label: 'BMS' },
+                              { field: 'fapa_cost', label: 'FAPA' },
+                              { field: 'cctv_cost', label: 'CCTV' },
+                              { field: 'owc_cost_rs_sqft', label: 'OWC' },
+                            ].map(({ field, label }) => {
+                              const val = Number(form[field]) || 0;
+                              return (
+                                <tr key={field} className="border-b border-border/50">
+                                  <td className="py-2 pr-4 text-xs">{label}</td>
+                                  <td className="py-2 px-4 text-right font-medium text-xs">{val > 0 ? val.toFixed(2) : '—'}</td>
+                                  <td className="py-2 pl-4 text-right text-xs">{val > 0 ? <span className="text-green-600">Filled</span> : <span className="text-muted-foreground">Empty</span>}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="border-t-2 border-border font-semibold">
+                              <td className="py-2 pr-4 text-xs">Sum of Packages</td>
+                              <td className="py-2 px-4 text-right text-xs">{sumOfCosts > 0 ? sumOfCosts.toFixed(2) : '—'}</td>
+                              <td className="py-2 pl-4 text-right text-xs">{sumOfCosts > 0 ? <span className="text-green-600">Computed</span> : <span className="text-muted-foreground">—</span>}</td>
+                            </tr>
+                            <tr className="border-t border-border">
+                              <td className="py-2 pr-4 text-xs">Total MEP Cost</td>
+                              <td className="py-2 px-4 text-right text-xs">{(Number(form.total_mep_cost) || 0) > 0 ? Number(form.total_mep_cost).toFixed(2) : '—'}</td>
+                              <td className="py-2 pl-4 text-right text-xs">{(Number(form.total_mep_cost) || 0) > 0 ? <span className="text-green-600">Filled</span> : <span className="text-muted-foreground">Empty</span>}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                       {renderEditableFields(TOTAL_COST_FIELDS, computedMap)}
                     </div>
-                    {sumOfCosts > 0 && (
-                      <div className="mt-6 border-l-2 border-border px-4 py-3 text-sm">
-                        Sum of package costs: <strong>{sumOfCosts.toFixed(2)} Rs/Sq.ft (BUA)</strong>
-                      </div>
-                    )}
                     {costWarning && (
                       <div className="mt-3 border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-xs text-amber-700">
                         {costWarning}

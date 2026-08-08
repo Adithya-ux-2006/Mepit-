@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getProjectDetailBundle, getProjectInputs, getKpiFormulas, upsertProjectInputs, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs } from '@/lib/api';
+import { getProjectDetailBundle, getProjects, getProjectInputs, getKpiFormulas, upsertProjectInputs, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ArrowLeft, CopyPlus, Pencil, Save, X } from 'lucide-react';
+import { ArrowLeft, CopyPlus, GitCompareArrows, Pencil, Save, X } from 'lucide-react';
 import type { Project, ProjectInputs, ProjectKpiOutput, KpiFormula, ValidationRule } from '@/types';
 import {
   ENGINEERING_SERVICE_GROUPS,
@@ -49,8 +49,32 @@ const editableInputKeys = new Set<ProjectInputField>([
   'bua_substructure', 'bua_superstructure', 'building_heights',
   'floor_to_floor_height', 'office_false_ceiling', 'corridor_false_ceiling',
   'occupancy_hvac_bua', 'occupancy_phe_bua',
-  'chiller_plant_room_location', 'lesson_learned',
+  'chiller_plant_room_location', 'central_ac_plant_room_area', 'central_ac_plant_location',
+  'standard_followed', 'lesson_learned',
   'occupancy_lobby', 'design_temperature_office', 'iaq_fresh_air',
+  'retail_area', 'additional_spaces',
+  'occupancy_density_retail',
+  'occupancy_thermal_setpoint_office', 'occupancy_thermal_setpoint_retail',
+  'occupancy_thermal_setpoint_fb', 'occupancy_thermal_setpoint_lobby',
+  'lighting_gain_office', 'lighting_gain_retail', 'lighting_gain_fb',
+  'equipment_gain_office', 'equipment_gain_retail', 'equipment_gain_fb',
+  'outdoor_db_temp', 'outdoor_db_temp_source', 'outdoor_wb_temp', 'outdoor_wb_temp_source',
+  'total_ac_tonnage', 'diversity', 'type_of_chiller_select',
+  'chiller_tonnage_water', 'chiller_units_water',
+  'chiller_tonnage_air', 'chiller_units_air',
+  'chw_pumping_type', 'chw_primary_flow_gpm', 'chw_primary_power_kw',
+  'chw_secondary_flow_gpm', 'chw_secondary_power_kw',
+  'condenser_pumping_type', 'condenser_flow_gpm', 'condenser_power_kw',
+  'ct_condenser_water_in', 'ct_condenser_water_out', 'ct_wet_bulb',
+  'ct_fan_type', 'ct_fan_motor_rating_kw', 'cpo', 'cpm',
+  'total_dehumidified_airflow', 'chw_supply_temp', 'chw_return_temp',
+  'ahu_fan_type', 'ahu_filtration', 'ahu_fan_kw', 'ahu_scope_select',
+  'total_fresh_airflow', 'tfahu_chw_supply_temp', 'tfahu_chw_return_temp',
+  'tfahu_fan_type', 'tfahu_filtration', 'tfahu_fan_kw',
+  'fresh_air_precooling', 'passive_desiccant_wheel', 'pct_extra_fresh_air', 'tfahu_scope',
+  'server_cooling_source', 'server_cooling_mode', 'server_cooling_scope',
+  'toilet_exhaust_acph', 'kitchen_exhaust_acph', 'owc_exhaust_acph', 'stp_exhaust_acph',
+  'smoke_extraction_tenant', 'ventilation_electrical_room_typ',
   'diversity_considered', 'type_of_chiller', 'chiller_configuration',
   'chiller_parameters', 'refrigerant_used', 'critical_room_hvac',
   'ahu_scope', 'cfm_sqft', 'ahu_filtration_strategy',
@@ -80,14 +104,29 @@ const editableInputKeys = new Set<ProjectInputField>([
   'domestic_water_ugt', 'domestic_water_oht',
   'flushing_water_ugt', 'flushing_water_oht',
   'owc_capacity', 'owc_cost_rs_sqft', 'phe_package_cost_lumpsum',
+  'water_distribution_type', 'occupancy_basis_water', 'total_occupants_water',
+  'ugt_raw_water_kl', 'ugt_treated_water_kl', 'ugt_domestic_water_kl',
+  'ugt_flushing_water_kl', 'ugt_cooling_tower_makeup_kl', 'ugt_irrigation_kl', 'ugt_condensate_kl',
+  'oht_domestic_water_kl', 'oht_flushing_water_kl', 'oht_cooling_tower_makeup_kl',
+  'stp_location', 'water_meters', 'bms_water_meters',
+  'drainage_system', 'kitchen_waste_stack',
+  'rainwater_tank_capacity_m3', 'rainwater_tank_location', 'recharge_capacity_m3',
+  'centralised_garbage_room', 'garbage_room_location',
+  'owc_capacity_kg', 'owc_location',
   'ff_pumps_system', 'express_risers', 'intermediate_tank',
   'drencher_podium', 'drencher_typical', 'ff_package_cost_lumpsum',
+  'ff_underground_tank_kl', 'ff_intermediate_tank_kl', 'ff_overhead_tank_kl',
+  'ff_drencher', 'ff_express_riser', 'ff_dry_riser', 'ff_wet_riser',
+  'ff_sprinkler_riser', 'ff_ev_protection', 'ff_cost',
+  'fapa_system', 'fapa_addressable_type', 'fapa_cables_type', 'fapa_cost_val',
   'fapa_technology', 'fapa_addressable', 'fapa_cables', 'fapa_package_cost_lumpsum',
   'cctv_type', 'security_access_control', 'cctv_package_cost_lumpsum',
   'glazing_u_value', 'vlt', 'glazing_shgc',
   'wall_u_value', 'roof_u_value', 'spandrel_u_value', 'spandrel_height',
   'punched_windows', 'wwr', 'facade_power_controller',
+  'glazing_height', 'glazing_types',
   'sustainability_certification',
+  'certification_types', 'custom_certifications',
 ]);
 
 const projectFieldLabels: Record<string, string> = {
@@ -96,7 +135,7 @@ const projectFieldLabels: Record<string, string> = {
   location_city: 'City',
   location_state: 'State',
   project_year: 'Project Year',
-  built_up_area: 'Built Up Area',
+  built_up_area: 'Total Built Up Area',
   carpet_area: 'Carpet Area',
   saleable_area: 'Saleable Area',
   leasable_area: 'Leasable Area',
@@ -189,24 +228,24 @@ function getBenchmark(
         : { status: 'warn', note: `Target: 1-2% of BUA (currently ${val.toFixed(1)}%)` };
     case 'COOLING_LOAD_DENSITY':
       return val >= 300 && val <= 500
-        ? { status: 'good', note: 'Within benchmark (300-500 sqft/TR)' }
-        : { status: 'warn', note: `Benchmark: 350-400+ sqft/TR (currently ${val.toFixed(0)})` };
+        ? { status: 'good', note: 'Within benchmark (300-500 sq. ft/TR)' }
+        : { status: 'warn', note: `Benchmark: 350-400+ sq. ft/TR (currently ${val.toFixed(0)})` };
     case 'CFM_SQFT':
       return val >= 1.7 && val <= 2.5
-        ? { status: 'good', note: 'Within benchmark (1.7-2.5 CFM/sqft)' }
-        : { status: 'warn', note: `Benchmark: 1.7-2.0 CFM/sqft (CHW) or 2+ (VRF)` };
+        ? { status: 'good', note: 'Within benchmark (1.7-2.5 CFM/sq. ft)' }
+        : { status: 'warn', note: `Benchmark: 1.7-2.0 CFM/sq. ft (CHW) or 2+ (VRF)` };
     case 'TRANSFORMER_DENSITY':
       return val >= 4 && val <= 7
-        ? { status: 'good', note: 'Within benchmark (~5.5 VA/sqft)' }
-        : { status: 'warn', note: `Benchmark: ~5.5 VA/sqft` };
+        ? { status: 'good', note: 'Within benchmark (~5.5 VA/sq. ft)' }
+        : { status: 'warn', note: `Benchmark: ~5.5 VA/sq. ft` };
     case 'HVAC_RS_SQFT':
       return val >= 200 && val <= 400
-        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sqft BUA)' }
-        : { status: 'warn', note: `Benchmark: Rs 250-300/sqft BUA (currently Rs ${val.toFixed(0)})` };
+        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sq. ft BUA)' }
+        : { status: 'warn', note: `Benchmark: Rs 250-300/sq. ft BUA (currently Rs ${val.toFixed(0)})` };
     case 'ELECTRICAL_RS_SQFT':
       return val >= 200 && val <= 400
-        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sqft BUA)' }
-        : { status: 'warn', note: `Benchmark: Rs 250-300/sqft BUA (currently Rs ${val.toFixed(0)})` };
+        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sq. ft BUA)' }
+        : { status: 'warn', note: `Benchmark: Rs 250-300/sq. ft BUA (currently Rs ${val.toFixed(0)})` };
     case 'TOTAL_MEP_RS_SQFT':
       return val >= 500 && val <= 900
         ? { status: 'good', note: 'Within aggregate MEP benchmark' }
@@ -230,6 +269,9 @@ export default function ProjectDetailPage() {
   const [previewOutputs, setPreviewOutputs] = useState<OutputWithKpi[]>([]);
   const [validationRules, setValidationRules] = useState<ValidationRule[]>([]);
   const [storedValidationResults, setStoredValidationResults] = useState<ValidationRow[]>([]);
+  const [stageComparison, setStageComparison] = useState(false);
+  const [siblingSnapshots, setSiblingSnapshots] = useState<{ project: Project; inputs: ProjectInputs | null }[]>([]);
+  const [stageComparisonLoading, setStageComparisonLoading] = useState(false);
 
   // When editing, recompute validation live from editForm; otherwise use stored results
   const validationResults = useMemo(() => {
@@ -253,7 +295,7 @@ export default function ProjectDetailPage() {
     if (!id) return;
     setLoading(true);
     getProjectDetailBundle(id)
-      .then(({ project: p, inputs: i, outputs: o, validationRules: rules }) => {
+      .then(async ({ project: p, inputs: i, outputs: o, validationRules: rules }) => {
         setProject(p);
         setInputs(i);
         setOutputs(o);
@@ -283,10 +325,72 @@ export default function ProjectDetailPage() {
             setPreviewOutputs(preview);
           }).catch(() => {});
         }
+
+        // After setting project, load siblings for comparison
+        if (p) {
+          const allProjects = await getProjects();
+          const rootId = p.source_project_id ?? p.id;
+          const siblings = allProjects.filter(
+            (proj) => (proj.source_project_id ?? proj.id) === rootId
+          );
+          if (siblings.length > 1) {
+            const stageOrder: Record<string, number> = {
+              concept: 0, schematic: 1, design_development: 2, tender: 3,
+              design_build_tender: 4, post_tender: 5, gfc: 6, execution: 7,
+              final: 8, completed: 9,
+            };
+            siblings.sort((a, b) => (stageOrder[a.project_stage] ?? 99) - (stageOrder[b.project_stage] ?? 99));
+            const snapshots = await Promise.all(
+              siblings.map(async (proj) => {
+                try {
+                  const inputs = await getProjectInputs(proj.id);
+                  return { project: proj, inputs };
+                } catch {
+                  return { project: proj, inputs: null };
+                }
+              })
+            );
+            setSiblingSnapshots(snapshots);
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  const loadSiblingSnapshots = useCallback(async () => {
+    if (!project) return;
+    setStageComparisonLoading(true);
+    try {
+      const allProjects = await getProjects();
+      const rootId = project.source_project_id ?? project.id;
+      const siblings = allProjects.filter(
+        (p) => (p.source_project_id ?? p.id) === rootId
+      );
+      const stageOrder: Record<string, number> = {
+        concept: 0, schematic: 1, design_development: 2, tender: 3,
+        design_build_tender: 4, post_tender: 5, gfc: 6, execution: 7,
+        final: 8, completed: 9,
+      };
+      siblings.sort((a, b) => (stageOrder[a.project_stage] ?? 99) - (stageOrder[b.project_stage] ?? 99));
+      const snapshots = await Promise.all(
+        siblings.map(async (p) => {
+          try {
+            const inputs = await getProjectInputs(p.id);
+            return { project: p, inputs };
+          } catch {
+            return { project: p, inputs: null };
+          }
+        })
+      );
+      setSiblingSnapshots(snapshots);
+      setStageComparison(true);
+    } catch {
+      // ignore
+    } finally {
+      setStageComparisonLoading(false);
+    }
+  }, [project]);
 
   const actions = useReviewActions(() => {
     setReviewError(null);
@@ -351,6 +455,12 @@ export default function ProjectDetailPage() {
               Add Stage
             </Button>
           </Link>
+          {siblingSnapshots.length > 1 && (
+            <Button size="sm" variant="outline" onClick={() => { if (stageComparison) setStageComparison(false); else loadSiblingSnapshots(); }} disabled={stageComparisonLoading}>
+              <GitCompareArrows className="h-3.5 w-3.5 mr-1.5" />
+              {stageComparison ? 'Hide Comparison' : 'Compare Stages'}
+            </Button>
+          )}
           <span className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
             project.status === 'approved' ? 'bg-green-50 text-green-700' :
             project.status === 'submitted' || project.status === 'under_review' ? 'bg-yellow-50 text-yellow-700' :
@@ -450,15 +560,15 @@ export default function ProjectDetailPage() {
             </div>
             <div>
               <span className="text-muted-foreground">BUA</span>
-              <p className="font-medium">{project.built_up_area?.toLocaleString()} sqft</p>
+              <p className="font-medium">{project.built_up_area?.toLocaleString()} sq. ft</p>
             </div>
             <div>
               <span className="text-muted-foreground">Carpet Area</span>
-              <p className="font-medium">{project.carpet_area?.toLocaleString()} sqft</p>
+              <p className="font-medium">{project.carpet_area?.toLocaleString()} sq. ft</p>
             </div>
             <div>
               <span className="text-muted-foreground">Saleable Area</span>
-              <p className="font-medium">{project.saleable_area?.toLocaleString()} sqft</p>
+              <p className="font-medium">{project.saleable_area?.toLocaleString()} sq. ft</p>
             </div>
             <div>
               <span className="text-muted-foreground">Version</span>
@@ -553,6 +663,77 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
+      {/* Stage Comparison Table */}
+      {stageComparison && siblingSnapshots.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Stage Comparison</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-2 pr-4 text-xs font-medium text-muted-foreground sticky left-0 bg-background">Field</th>
+                    {siblingSnapshots.map((snap) => (
+                      <th key={snap.project.id} className="text-right py-2 px-3 text-xs font-medium text-muted-foreground min-w-[120px]">
+                        {getProjectStageLabel(snap.project.project_stage)}
+                        <span className="block text-[10px] font-normal">{snap.project.project_name}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const allFields = new Set<string>();
+                    for (const snap of siblingSnapshots) {
+                      if (!snap.inputs) continue;
+                      const flatEntries = Object.entries(snap.inputs).filter(([k]) => !['id', 'project_id', 'extended_fields'].includes(k));
+                      for (const [k] of flatEntries) allFields.add(k);
+                      const ext = snap.inputs.extended_fields as Record<string, unknown> | undefined;
+                      if (ext) {
+                        for (const k of Object.keys(ext)) allFields.add(k);
+                      }
+                    }
+                    const sortedFields = Array.from(allFields).sort();
+                    return sortedFields.map((field) => {
+                      const meta = PROJECT_INPUT_FIELD_META[field as ProjectInputField];
+                      const label = meta?.label ?? field.replaceAll('_', ' ');
+                      const values = siblingSnapshots.map((snap) => {
+                        if (!snap.inputs) return null;
+                        const flatVal = (snap.inputs as unknown as Record<string, unknown>)[field];
+                        if (flatVal !== undefined && flatVal !== null) return flatVal;
+                        const ext = snap.inputs.extended_fields as Record<string, unknown> | undefined;
+                        return ext?.[field] ?? null;
+                      });
+                      const prevValues = [null, ...values.slice(0, -1)];
+                      return (
+                        <tr key={field} className="border-b border-border/50">
+                          <td className="py-1.5 pr-4 text-xs sticky left-0 bg-background">{label}</td>
+                          {values.map((val, idx) => {
+                            const prev = prevValues[idx];
+                            const changed = val != null && prev != null && JSON.stringify(val) !== JSON.stringify(prev);
+                            const isNew = val != null && prev == null;
+                            return (
+                              <td
+                                key={siblingSnapshots[idx].project.id}
+                                className={`py-1.5 px-3 text-right text-xs ${changed ? 'bg-amber-50 font-semibold' : isNew ? 'bg-blue-50' : ''}`}
+                              >
+                                {formatProjectInputValue(field as ProjectInputField, val)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Engineering Inputs */}
       {inputs && (
         <Card>
@@ -645,7 +826,13 @@ export default function ProjectDetailPage() {
                             <label className="text-xs text-muted-foreground block">
                               {meta.label}{meta.unit ? ` (${meta.unit})` : ''}
                             </label>
-                            {meta.kind === 'select' ? (
+                            {meta.kind === 'repeatable' ? (
+                              <span className="text-xs text-muted-foreground italic">
+                                {Array.isArray(value) && value.length > 0
+                                  ? `${value.length} entr${value.length === 1 ? 'y' : 'ies'} (edit in create form)`
+                                  : 'No entries'}
+                              </span>
+                            ) : meta.kind === 'select' ? (
                               <select
                                 value={value == null ? '' : String(value)}
                                 onChange={(e) => {

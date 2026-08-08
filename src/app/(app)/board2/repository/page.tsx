@@ -396,7 +396,7 @@ export default function RepositoryPage() {
                       <TableHead key={d.project.id} className="min-w-[140px] text-right">
                         {d.project.project_name}
                         <span className="block text-[10px] font-normal text-muted-foreground">
-                          {getProjectStageLabel(d.project.project_stage)} · {d.project.typology} · {d.project.built_up_area.toLocaleString()} sqft
+                          {getProjectStageLabel(d.project.project_stage)} · {d.project.typology} · {d.project.built_up_area.toLocaleString()} sq. ft
                         </span>
                       </TableHead>
                     ))}
