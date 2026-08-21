@@ -352,22 +352,33 @@ function ComputedResult({
   label,
   unit,
   value,
+  calculatedValue,
+  onChange,
 }: {
-  field: string;
+  field: ProjectInputField;
   label: string;
   unit: string;
   value: number | null;
+  calculatedValue: number | null;
+  onChange: (value: number | null) => void;
 }) {
   return (
     <div
       data-computed-field={field}
-      className="min-h-20 border-l-2 border-emerald-600 bg-emerald-50/60 px-4 py-3"
+      className="border-l-2 border-emerald-600 bg-emerald-50/60 px-4 py-3"
     >
-      <p className="text-xs text-emerald-800">{label}</p>
-      <output className="mt-1 block text-lg font-semibold text-foreground">
-        {value == null ? 'Waiting for inputs' : computedNumberFormatter.format(value)}
-        {value != null && unit ? <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span> : null}
-      </output>
+      <NumField
+        label={label}
+        unit={unit}
+        value={value}
+        onChange={onChange}
+        placeholder={calculatedValue == null ? 'Waiting for inputs' : computedNumberFormatter.format(calculatedValue)}
+        decimals={2}
+      />
+      <p className="mt-1 text-[11px] text-emerald-800">
+        Calculated: {calculatedValue == null ? 'Waiting for inputs' : computedNumberFormatter.format(calculatedValue)}
+        {calculatedValue != null && unit ? ` ${unit}` : ''}
+      </p>
     </div>
   );
 }
@@ -964,14 +975,18 @@ function CreateProjectForm() {
     // Check if this is a computed field
     const computed = computedMap?.get(field);
     if (computed) {
-      const val = computed.compute(form);
+      const calculatedValue = computed.compute(form);
+      const storedValue = form[field];
+      const value = typeof storedValue === 'number' ? storedValue : calculatedValue;
       return (
         <ComputedResult
           key={field}
           field={field}
           label={computed.label}
           unit={computed.unit}
-          value={val}
+          value={value}
+          calculatedValue={calculatedValue}
+          onChange={(nextValue) => update(field, nextValue)}
         />
       );
     }

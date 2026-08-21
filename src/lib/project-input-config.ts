@@ -683,15 +683,17 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
   {
     key: 'hvac',
     title: 'HVAC',
-    fields: [],
+    fields: [
+      'office_area', 'fb_area', 'gross_area',
+      'population', 'cooling_load_saleable', 'cooling_load_superstructure', 'cooling_load_carpet',
+    ],
     subGroups: [
       {
         key: 'hvac-area',
         title: 'Section 1 – Area',
         fields: [
-          'office_area', 'retail_area', 'fb_area', 'additional_spaces',
-          'total_tr', 'gross_area',
-          'cooling_load_density_sqft_tr',
+          'retail_area', 'additional_spaces',
+          'total_tr',
         ],
       },
       {
@@ -736,7 +738,6 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
           'total_fresh_airflow', 'tfahu_chw_supply_temp', 'tfahu_chw_return_temp',
           'tfahu_fan_type', 'tfahu_filtration', 'tfahu_fan_kw',
           'fresh_air_precooling', 'passive_desiccant_wheel', 'pct_extra_fresh_air', 'tfahu_scope',
-          'fresh_air_cfm_sqft',
         ],
       },
       {
@@ -775,7 +776,12 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
   {
     key: 'electrical-dg',
     title: 'Electrical',
-    fields: [],
+    fields: [
+      'total_va_sqft_carpet', 'total_va_sqft_saleable',
+      'va_sqft_bua_tenant', 'va_sqft_bua_common_ex_ev', 'va_sqft_bua_ev', 'va_sqft_bua_total',
+      'transformer_sizing_after_loading', 'va_sqft_transformer',
+      'dg_load_va_saleable', 'dg_load_va_bua', 'va_sqft_dg_capacity', 'dg_set_kva_after_loading',
+    ],
     subGroups: [
       {
         key: 'electrical-general',
@@ -796,8 +802,7 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
           'transformer_loading_pct_val', 'transformer_diversity_pct',
           'transformer_config', 'transformer_type', 'transformer_location',
           'transformer_redundancy', 'transformer_sizing_calc', 'transformer_loading_pct',
-          'transformer_sizing_after_loading', 'transformer_capacity_diversity',
-          'va_sqft_transformer',
+          'transformer_capacity_diversity',
         ],
       },
       {
@@ -810,8 +815,6 @@ export const ENGINEERING_SERVICE_GROUPS: readonly EngineeringServiceGroup[] = [
           'hsd_capacity', 'hsd_backup',
           'dg_loading_factor', 'dg_redundancy',
           'dg_capacity_calc', 'dg_loading_pct', 'dg_capacity_selected',
-          'dg_load_va_saleable', 'dg_load_va_bua', 'va_sqft_dg_capacity',
-          'dg_set_kva_after_loading',
         ],
       },
       {
@@ -1001,8 +1004,13 @@ export const TOTAL_COST_FIELDS: readonly ProjectInputField[] = [
 // ============================================================================
 
 export function isExtendedField(field: ProjectInputField): field is ExtendedFieldKey {
-  return field in EXTENDED_FIELD_META;
+  return field in EXTENDED_FIELD_META && !DUPLICATE_EXTENDED_FIELD_KEYS.has(field as string);
 }
+
+const DUPLICATE_EXTENDED_FIELD_KEYS = new Set<string>([
+  'annual_energy_kwh',
+  'operating_hours',
+]);
 
 export function formatProjectInputValue(field: ProjectInputField, value: unknown): string {
   if (value == null || value === '') return '—';
@@ -1031,6 +1039,9 @@ export function flattenExtendedFields(
 ): void {
   if (!extendedFields) return;
   for (const [key, value] of Object.entries(extendedFields)) {
+    if (DUPLICATE_EXTENDED_FIELD_KEYS.has(key) && target[key] !== undefined && target[key] !== null) {
+      continue;
+    }
     target[key] = value;
   }
 }
@@ -1042,6 +1053,7 @@ export function collectExtendedFields(
   const result: Record<string, unknown> = {};
   const extendedKeys = Object.keys(EXTENDED_FIELD_META) as ExtendedFieldKey[];
   for (const key of extendedKeys) {
+    if (DUPLICATE_EXTENDED_FIELD_KEYS.has(key)) continue;
     if (flatForm[key] !== undefined && flatForm[key] !== null) {
       result[key] = flatForm[key];
     }
@@ -1049,17 +1061,13 @@ export function collectExtendedFields(
   return result;
 }
 
-// Build a Zod schema for extended_fields from EXTENDED_FIELD_META
-// Computed fields are stripped silently (never submitted by client)
+// Build a Zod schema for extended_fields from EXTENDED_FIELD_META.
+// Computed fields are allowed so users can override calculated results when needed.
 export function buildExtendedFieldsSchema(): z.ZodObject<Record<string, z.ZodOptional<z.ZodNullable<z.ZodTypeAny>>>> {
   const shape: Record<string, z.ZodOptional<z.ZodNullable<z.ZodTypeAny>>> = {};
-  const computedKeys = new Set<string>();
 
   for (const [key, meta] of Object.entries(EXTENDED_FIELD_META) as [string, ProjectInputFieldMeta][]) {
-    if (meta.kind === 'computed') {
-      computedKeys.add(key);
-      continue;
-    }
+    if (DUPLICATE_EXTENDED_FIELD_KEYS.has(key)) continue;
     if (meta.kind === 'number') {
       let numSchema = z.number();
       if (meta.min != null) numSchema = numSchema.min(meta.min);
@@ -1072,6 +1080,8 @@ export function buildExtendedFieldsSchema(): z.ZodObject<Record<string, z.ZodOpt
         );
       }
       shape[key] = numSchema.nullable().optional();
+    } else if (meta.kind === 'computed') {
+      shape[key] = z.number().nullable().optional();
     } else if (meta.kind === 'select' && meta.options) {
       shape[key] = z.enum(meta.options as unknown as [string, ...string[]]).nullable().optional();
     } else {

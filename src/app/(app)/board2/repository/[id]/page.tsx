@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getProjectDetailBundle, getProjects, getProjectInputs, getKpiFormulas, upsertProjectInputs, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs } from '@/lib/api';
@@ -9,12 +9,20 @@ import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ArrowLeft, CopyPlus, GitCompareArrows, Pencil, Save, X } from 'lucide-react';
+import { ArrowLeft, CopyPlus, Pencil, Save, X } from 'lucide-react';
 import type { Project, ProjectInputs, ProjectKpiOutput, KpiFormula, ValidationRule } from '@/types';
 import {
   ENGINEERING_SERVICE_GROUPS,
@@ -28,7 +36,7 @@ import {
   type EngineeringServiceGroup,
 } from '@/lib/project-input-config';
 import { evaluateValidationRules, type ValidationError } from '@/lib/validation-engine';
-import { getProjectStageLabel } from '@/lib/project-stages';
+import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
@@ -127,6 +135,11 @@ const editableInputKeys = new Set<ProjectInputField>([
   'glazing_height', 'glazing_types',
   'sustainability_certification',
   'certification_types', 'custom_certifications',
+  ...ENGINEERING_SERVICE_GROUPS.flatMap((group) => [
+    ...group.fields,
+    ...(group.subGroups?.flatMap((subGroup) => subGroup.fields) ?? []),
+  ]),
+  ...TOTAL_COST_FIELDS,
 ]);
 
 const projectFieldLabels: Record<string, string> = {
@@ -140,6 +153,50 @@ const projectFieldLabels: Record<string, string> = {
   saleable_area: 'Saleable Area',
   leasable_area: 'Leasable Area',
 };
+
+const PROJECT_STAGE_FIELDS = [
+  'project_name',
+  'typology',
+  'location_city',
+  'location_state',
+  'project_year',
+  'built_up_area',
+  'carpet_area',
+  'saleable_area',
+  'leasable_area',
+] as const;
+
+interface StageSnapshot {
+  project: Project;
+  inputs: ProjectInputs | null;
+  flatInputs: Record<string, unknown>;
+}
+
+function buildFlatInputs(inputs: ProjectInputs | null): Record<string, unknown> {
+  const flat: Record<string, unknown> = {};
+  if (!inputs) return flat;
+  for (const [key, value] of Object.entries(inputs)) {
+    if (key === 'id' || key === 'project_id' || key === 'extended_fields') continue;
+    flat[key] = value;
+  }
+  flattenExtendedFields(inputs.extended_fields, flat);
+  return flat;
+}
+
+function getStageOrder(project: Project): number {
+  const index = PROJECT_STAGES.findIndex((stage) => stage.value === project.project_stage);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function normalizeComparableValue(value: unknown): string {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(Math.round(value * 10000) / 10000) : '';
+  return String(value).trim().toLowerCase();
+}
+
+function stageValueChanged(current: unknown, previous: unknown): boolean {
+  return normalizeComparableValue(current) !== normalizeComparableValue(previous);
+}
 
 function getFieldLabel(field: string): string {
   if (projectFieldLabels[field]) return projectFieldLabels[field];
@@ -269,9 +326,7 @@ export default function ProjectDetailPage() {
   const [previewOutputs, setPreviewOutputs] = useState<OutputWithKpi[]>([]);
   const [validationRules, setValidationRules] = useState<ValidationRule[]>([]);
   const [storedValidationResults, setStoredValidationResults] = useState<ValidationRow[]>([]);
-  const [stageComparison, setStageComparison] = useState(false);
-  const [siblingSnapshots, setSiblingSnapshots] = useState<{ project: Project; inputs: ProjectInputs | null }[]>([]);
-  const [stageComparisonLoading, setStageComparisonLoading] = useState(false);
+  const [stageSnapshots, setStageSnapshots] = useState<StageSnapshot[]>([]);
 
   // When editing, recompute validation live from editForm; otherwise use stored results
   const validationResults = useMemo(() => {
@@ -290,6 +345,8 @@ export default function ProjectDetailPage() {
   }, [editing, editForm, project, validationRules, storedValidationResults]);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const { user } = useAuth();
+
+  const flatInputs = useMemo(() => buildFlatInputs(inputs), [inputs]);
 
   const loadData = useCallback(() => {
     if (!id) return;
@@ -326,71 +383,33 @@ export default function ProjectDetailPage() {
           }).catch(() => {});
         }
 
-        // After setting project, load siblings for comparison
         if (p) {
-          const allProjects = await getProjects();
-          const rootId = p.source_project_id ?? p.id;
-          const siblings = allProjects.filter(
-            (proj) => (proj.source_project_id ?? proj.id) === rootId
-          );
-          if (siblings.length > 1) {
-            const stageOrder: Record<string, number> = {
-              concept: 0, schematic: 1, design_development: 2, tender: 3,
-              design_build_tender: 4, post_tender: 5, gfc: 6, execution: 7,
-              final: 8, completed: 9,
-            };
-            siblings.sort((a, b) => (stageOrder[a.project_stage] ?? 99) - (stageOrder[b.project_stage] ?? 99));
-            const snapshots = await Promise.all(
-              siblings.map(async (proj) => {
-                try {
-                  const inputs = await getProjectInputs(proj.id);
-                  return { project: proj, inputs };
-                } catch {
-                  return { project: proj, inputs: null };
-                }
-              })
-            );
-            setSiblingSnapshots(snapshots);
-          }
+          const rootProjectId = p.source_project_id ?? p.id;
+          getProjects()
+            .then(async (allProjects) => {
+              const siblingProjects = allProjects
+                .filter((candidate) => (candidate.source_project_id ?? candidate.id) === rootProjectId)
+                .sort((a, b) => getStageOrder(a) - getStageOrder(b) || a.created_at.localeCompare(b.created_at));
+              const snapshots = await Promise.all(
+                siblingProjects.map(async (candidate) => {
+                  const stageInputs = candidate.id === id ? i : await getProjectInputs(candidate.id);
+                  return {
+                    project: candidate,
+                    inputs: stageInputs,
+                    flatInputs: buildFlatInputs(stageInputs),
+                  };
+                }),
+              );
+              setStageSnapshots(snapshots);
+            })
+            .catch(() => {
+              setStageSnapshots([{ project: p, inputs: i, flatInputs: buildFlatInputs(i) }]);
+            });
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
-
-  const loadSiblingSnapshots = useCallback(async () => {
-    if (!project) return;
-    setStageComparisonLoading(true);
-    try {
-      const allProjects = await getProjects();
-      const rootId = project.source_project_id ?? project.id;
-      const siblings = allProjects.filter(
-        (p) => (p.source_project_id ?? p.id) === rootId
-      );
-      const stageOrder: Record<string, number> = {
-        concept: 0, schematic: 1, design_development: 2, tender: 3,
-        design_build_tender: 4, post_tender: 5, gfc: 6, execution: 7,
-        final: 8, completed: 9,
-      };
-      siblings.sort((a, b) => (stageOrder[a.project_stage] ?? 99) - (stageOrder[b.project_stage] ?? 99));
-      const snapshots = await Promise.all(
-        siblings.map(async (p) => {
-          try {
-            const inputs = await getProjectInputs(p.id);
-            return { project: p, inputs };
-          } catch {
-            return { project: p, inputs: null };
-          }
-        })
-      );
-      setSiblingSnapshots(snapshots);
-      setStageComparison(true);
-    } catch {
-      // ignore
-    } finally {
-      setStageComparisonLoading(false);
-    }
-  }, [project]);
 
   const actions = useReviewActions(() => {
     setReviewError(null);
@@ -433,9 +452,34 @@ export default function ProjectDetailPage() {
     })),
     { key: 'total', title: 'Total', fields: TOTAL_COST_FIELDS },
   ];
+  const stageComparisonGroups = [
+    { key: 'project', title: 'Project Details', fields: PROJECT_STAGE_FIELDS as readonly string[] },
+    ...groupedInputFields.map((group) => ({
+      key: group.key,
+      title: group.title,
+      fields: group.fields as readonly string[],
+    })),
+  ];
+  const getSnapshotValue = (snapshot: StageSnapshot, field: string): unknown => {
+    if (field in projectFieldLabels) {
+      return snapshot.project[field as keyof Project];
+    }
+    return snapshot.flatInputs[field];
+  };
+  const formatStageComparisonValue = (field: string, value: unknown): string => {
+    if (value == null || value === '') return '—';
+    if (field === 'project_year') return String(value);
+    if (['built_up_area', 'carpet_area', 'saleable_area', 'leasable_area'].includes(field) && typeof value === 'number') {
+      return `${value.toLocaleString()} sqft`;
+    }
+    const meta = PROJECT_INPUT_FIELD_META[field as ProjectInputField];
+    if (meta) return formatProjectInputValue(field as ProjectInputField, value);
+    if (typeof value === 'number') return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return String(value);
+  };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/board2/repository">
           <Button variant="ghost" size="icon">
@@ -455,12 +499,6 @@ export default function ProjectDetailPage() {
               Add Stage
             </Button>
           </Link>
-          {siblingSnapshots.length > 1 && (
-            <Button size="sm" variant="outline" onClick={() => { if (stageComparison) setStageComparison(false); else loadSiblingSnapshots(); }} disabled={stageComparisonLoading}>
-              <GitCompareArrows className="h-3.5 w-3.5 mr-1.5" />
-              {stageComparison ? 'Hide Comparison' : 'Compare Stages'}
-            </Button>
-          )}
           <span className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
             project.status === 'approved' ? 'bg-green-50 text-green-700' :
             project.status === 'submitted' || project.status === 'under_review' ? 'bg-yellow-50 text-yellow-700' :
@@ -578,6 +616,70 @@ export default function ProjectDetailPage() {
         </CardContent>
       </Card>
 
+      {stageSnapshots.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Stage Comparison</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky left-0 z-10 min-w-56 bg-background">Field</TableHead>
+                    {stageSnapshots.map((snapshot) => (
+                      <TableHead key={snapshot.project.id} className="min-w-56">
+                        <span className="block font-medium">{getProjectStageLabel(snapshot.project.project_stage)}</span>
+                        <span className="block text-[11px] font-normal text-muted-foreground">
+                          {snapshot.project.status} · v{snapshot.project.version}
+                        </span>
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stageComparisonGroups.map((group) => (
+                    <Fragment key={group.key}>
+                      <TableRow key={`${group.key}-heading`}>
+                        <TableCell
+                          colSpan={stageSnapshots.length + 1}
+                          className="sticky left-0 bg-muted/70 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                        >
+                          {group.title}
+                        </TableCell>
+                      </TableRow>
+                      {group.fields.map((field) => (
+                        <TableRow key={`${group.key}-${field}`}>
+                          <TableCell className="sticky left-0 z-10 bg-background text-xs font-medium text-muted-foreground">
+                            {getFieldLabel(field)}
+                          </TableCell>
+                          {stageSnapshots.map((snapshot, index) => {
+                            const value = getSnapshotValue(snapshot, field);
+                            const previousValue = index > 0 ? getSnapshotValue(stageSnapshots[index - 1], field) : value;
+                            const changed = index > 0 && stageValueChanged(value, previousValue);
+                            return (
+                              <TableCell
+                                key={`${snapshot.project.id}-${field}`}
+                                className={`text-sm ${changed ? 'border-l-2 border-amber-500 bg-amber-50 font-medium text-amber-950' : ''}`}
+                              >
+                                {formatStageComparisonValue(field, value)}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      ))}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Highlighted cells changed from the stage immediately to their left.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Validation Results */}
       {validationResults.length > 0 && validationResults.some((r) => !r.passed) && (
         <Card>
@@ -663,77 +765,6 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Stage Comparison Table */}
-      {stageComparison && siblingSnapshots.length > 1 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Stage Comparison</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-2 pr-4 text-xs font-medium text-muted-foreground sticky left-0 bg-background">Field</th>
-                    {siblingSnapshots.map((snap) => (
-                      <th key={snap.project.id} className="text-right py-2 px-3 text-xs font-medium text-muted-foreground min-w-[120px]">
-                        {getProjectStageLabel(snap.project.project_stage)}
-                        <span className="block text-[10px] font-normal">{snap.project.project_name}</span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const allFields = new Set<string>();
-                    for (const snap of siblingSnapshots) {
-                      if (!snap.inputs) continue;
-                      const flatEntries = Object.entries(snap.inputs).filter(([k]) => !['id', 'project_id', 'extended_fields'].includes(k));
-                      for (const [k] of flatEntries) allFields.add(k);
-                      const ext = snap.inputs.extended_fields as Record<string, unknown> | undefined;
-                      if (ext) {
-                        for (const k of Object.keys(ext)) allFields.add(k);
-                      }
-                    }
-                    const sortedFields = Array.from(allFields).sort();
-                    return sortedFields.map((field) => {
-                      const meta = PROJECT_INPUT_FIELD_META[field as ProjectInputField];
-                      const label = meta?.label ?? field.replaceAll('_', ' ');
-                      const values = siblingSnapshots.map((snap) => {
-                        if (!snap.inputs) return null;
-                        const flatVal = (snap.inputs as unknown as Record<string, unknown>)[field];
-                        if (flatVal !== undefined && flatVal !== null) return flatVal;
-                        const ext = snap.inputs.extended_fields as Record<string, unknown> | undefined;
-                        return ext?.[field] ?? null;
-                      });
-                      const prevValues = [null, ...values.slice(0, -1)];
-                      return (
-                        <tr key={field} className="border-b border-border/50">
-                          <td className="py-1.5 pr-4 text-xs sticky left-0 bg-background">{label}</td>
-                          {values.map((val, idx) => {
-                            const prev = prevValues[idx];
-                            const changed = val != null && prev != null && JSON.stringify(val) !== JSON.stringify(prev);
-                            const isNew = val != null && prev == null;
-                            return (
-                              <td
-                                key={siblingSnapshots[idx].project.id}
-                                className={`py-1.5 px-3 text-right text-xs ${changed ? 'bg-amber-50 font-semibold' : isNew ? 'bg-blue-50' : ''}`}
-                              >
-                                {formatProjectInputValue(field as ProjectInputField, val)}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Engineering Inputs */}
       {inputs && (
         <Card>
@@ -796,6 +827,11 @@ export default function ProjectDetailPage() {
                       form[k] = typeof v === 'number' && v != null ? Number(v) : v;
                     }
                   }
+                  for (const field of editableInputKeys) {
+                    if (form[field] === undefined && flatInputs[field] !== undefined) {
+                      form[field] = flatInputs[field];
+                    }
+                  }
                   setEditForm(form);
                   setEditing(true);}}>
                   <Pencil className="h-3 w-3 mr-1" />
@@ -808,7 +844,7 @@ export default function ProjectDetailPage() {
             <div className="space-y-4 text-sm">
               {groupedInputFields.map((group) => {
                 const visibleFields = group.fields.filter((field) => {
-                  const value = editing ? editForm[field] : (inputs as unknown as Record<string, unknown>)[field];
+                  const value = editing ? editForm[field] : flatInputs[field];
                   return editing || (value != null && value !== '');
                 });
 
@@ -819,7 +855,7 @@ export default function ProjectDetailPage() {
                     <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{group.title}</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {visibleFields.map((field) => {
-                        const value = editing ? editForm[field] : (inputs as unknown as Record<string, unknown>)[field];
+                        const value = editing ? editForm[field] : flatInputs[field];
                         const meta = PROJECT_INPUT_FIELD_META[field];
                         return editing ? (
                           <div key={field} className="space-y-1">
@@ -846,6 +882,16 @@ export default function ProjectDetailPage() {
                                   <option key={option} value={option}>{option}</option>
                                 ))}
                               </select>
+                            ) : meta.kind === 'text' ? (
+                              <input
+                                type="text"
+                                value={value == null ? '' : String(value)}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setEditForm((prev) => ({ ...prev, [field]: nextValue || null }));
+                                }}
+                                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                              />
                             ) : (
                               <input
                                 type="number"
