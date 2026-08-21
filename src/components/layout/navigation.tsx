@@ -24,7 +24,17 @@ const adminItems = [
   { href: '/admin/validation-rules', label: 'Validation rules', icon: ShieldAlert },
 ];
 
-function NavGroup({ label, items, pathname }: { label: string; items: typeof mainItems; pathname: string }) {
+function NavGroup({
+  label,
+  items,
+  pathname,
+  onNavigate,
+}: {
+  label: string;
+  items: typeof mainItems;
+  pathname: string;
+  onNavigate?: (href: string) => void;
+}) {
   return (
     <div className="nav-group">
       <p>{label}</p>
@@ -34,6 +44,7 @@ function NavGroup({ label, items, pathname }: { label: string; items: typeof mai
           const Icon = item.icon;
           return (
             <Link key={item.href} href={item.href} aria-current={active ? 'page' : undefined}
+              onClick={() => onNavigate?.(item.href)}
               className={cn('nav-link', active && 'is-active')}>
               <Icon aria-hidden="true" />
               <span>{item.label}</span>
@@ -45,7 +56,7 @@ function NavGroup({ label, items, pathname }: { label: string; items: typeof mai
   );
 }
 
-export function Navigation() {
+export function Navigation({ onNavigate }: { onNavigate?: (href: string) => void }) {
   const pathname = usePathname();
   const { user, role, signOut } = useAuth();
 
@@ -55,8 +66,8 @@ export function Navigation() {
         <Image src="/grune-logo.png" alt="Grüne Designs" width={34} height={34} priority />
         <span><strong>Grüne</strong><small>MEP intelligence</small></span>
       </Link>
-      <NavGroup label="Workspace" items={mainItems} pathname={pathname} />
-      {role === 'admin' && <NavGroup label="Governance" items={adminItems} pathname={pathname} />}
+      <NavGroup label="Workspace" items={mainItems} pathname={pathname} onNavigate={onNavigate} />
+      {role === 'admin' && <NavGroup label="Governance" items={adminItems} pathname={pathname} onNavigate={onNavigate} />}
       <div className="nav-account">
         <div className="nav-avatar" aria-hidden="true">{(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}</div>
         <div className="nav-account-copy"><strong>{user?.name || 'Grüne user'}</strong><small>{role}</small></div>

@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageSkeleton } from '@/components/ui/loading-buffer';
 import {
   Card,
   CardContent,
@@ -1135,11 +1136,7 @@ function CreateProjectForm() {
     );
   };
   if (loadingProject) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-sm text-muted-foreground">Loading project...</p>
-      </div>
-    );
+    return <PageSkeleton title="Loading project form" rows={10} />;
   }
 
 
@@ -1728,7 +1725,7 @@ function CreateProjectForm() {
 
 export default function CreateProjectPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><p className="text-sm text-muted-foreground">Loading...</p></div>}>
+    <Suspense fallback={<PageSkeleton title="Preparing project form" rows={10} />}>
       <CreateProjectForm />
     </Suspense>
   );

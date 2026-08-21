@@ -1,6 +1,7 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getProjectDetailBundle, getProjects, getProjectInputs, getKpiFormulas, upsertProjectInputs, calculateAndStoreKpiOutputs, deleteProjectKpiOutputs, previewKpiOutputs } from '@/lib/api';
@@ -8,14 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { BufferBar, PageSkeleton } from '@/components/ui/loading-buffer';
 import {
   Card,
   CardContent,
@@ -29,6 +23,7 @@ import {
   PROJECT_INPUT_FIELD_META,
   TOTAL_COST_FIELDS,
   formatProjectInputValue,
+  getComputedFields,
   isExtendedField,
   flattenExtendedFields,
   collectExtendedFields,
@@ -37,6 +32,24 @@ import {
 } from '@/lib/project-input-config';
 import { evaluateValidationRules, type ValidationError } from '@/lib/validation-engine';
 import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
+import type { StageComparisonGroup, StageSnapshot } from './stage-comparison-table';
+
+const StageComparisonTable = dynamic(
+  () => import('./stage-comparison-table').then((mod) => mod.StageComparisonTable),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-4">
+        <BufferBar />
+        <div className="grid gap-2">
+          <div className="h-8 loading-shimmer" />
+          <div className="h-8 loading-shimmer" />
+          <div className="h-8 loading-shimmer" />
+        </div>
+      </div>
+    ),
+  },
+);
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
@@ -166,12 +179,6 @@ const PROJECT_STAGE_FIELDS = [
   'leasable_area',
 ] as const;
 
-interface StageSnapshot {
-  project: Project;
-  inputs: ProjectInputs | null;
-  flatInputs: Record<string, unknown>;
-}
-
 function buildFlatInputs(inputs: ProjectInputs | null): Record<string, unknown> {
   const flat: Record<string, unknown> = {};
   if (!inputs) return flat;
@@ -183,19 +190,26 @@ function buildFlatInputs(inputs: ProjectInputs | null): Record<string, unknown> 
   return flat;
 }
 
+function buildDisplayInputs(project: Project, inputs: ProjectInputs | null): Record<string, unknown> {
+  const flat = buildFlatInputs(inputs);
+  const calculationInputs = {
+    ...flat,
+    built_up_area: project.built_up_area,
+    carpet_area: project.carpet_area,
+    saleable_area: project.saleable_area,
+    leasable_area: project.leasable_area,
+  };
+  for (const computed of getComputedFields(calculationInputs)) {
+    if (flat[computed.field] === undefined || flat[computed.field] === null || flat[computed.field] === '') {
+      flat[computed.field] = computed.compute(calculationInputs);
+    }
+  }
+  return flat;
+}
+
 function getStageOrder(project: Project): number {
   const index = PROJECT_STAGES.findIndex((stage) => stage.value === project.project_stage);
   return index === -1 ? Number.MAX_SAFE_INTEGER : index;
-}
-
-function normalizeComparableValue(value: unknown): string {
-  if (value == null || value === '') return '';
-  if (typeof value === 'number') return Number.isFinite(value) ? String(Math.round(value * 10000) / 10000) : '';
-  return String(value).trim().toLowerCase();
-}
-
-function stageValueChanged(current: unknown, previous: unknown): boolean {
-  return normalizeComparableValue(current) !== normalizeComparableValue(previous);
 }
 
 function getFieldLabel(field: string): string {
@@ -346,7 +360,10 @@ export default function ProjectDetailPage() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const { user } = useAuth();
 
-  const flatInputs = useMemo(() => buildFlatInputs(inputs), [inputs]);
+  const flatInputs = useMemo(
+    () => project ? buildDisplayInputs(project, inputs) : buildFlatInputs(inputs),
+    [inputs, project],
+  );
 
   const loadData = useCallback(() => {
     if (!id) return;
@@ -376,8 +393,8 @@ export default function ProjectDetailPage() {
           setStoredValidationResults(groupValidationResults(evaluatedErrors));
         }
 
-        // Preview KPIs for submitted/under_review projects (not yet approved)
-        if (p && (p.status === 'submitted' || p.status === 'under_review') && i) {
+        // Always preview from current inputs so older approved records reflect current formulas/display logic.
+        if (p && i) {
           previewKpiOutputs(id).then((preview) => {
             setPreviewOutputs(preview);
           }).catch(() => {});
@@ -396,14 +413,14 @@ export default function ProjectDetailPage() {
                   return {
                     project: candidate,
                     inputs: stageInputs,
-                    flatInputs: buildFlatInputs(stageInputs),
+                    flatInputs: buildDisplayInputs(candidate, stageInputs),
                   };
                 }),
               );
               setStageSnapshots(snapshots);
             })
             .catch(() => {
-              setStageSnapshots([{ project: p, inputs: i, flatInputs: buildFlatInputs(i) }]);
+              setStageSnapshots([{ project: p, inputs: i, flatInputs: buildDisplayInputs(p, i) }]);
             });
         }
       })
@@ -418,11 +435,7 @@ export default function ProjectDetailPage() {
 
   useEffect(() => { setTimeout(loadData, 0); }, [loadData]);
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <PageSkeleton title="Loading project details" rows={10} />;
   }
 
   if (!project) {
@@ -434,7 +447,8 @@ export default function ProjectDetailPage() {
   }
 
   const categoryOrder = ['Space Planning', 'HVAC', 'Electrical', 'DG', 'Sustainability', 'Cost'] as const;
-  const kpisToShow = outputs.length > 0 ? outputs : previewOutputs;
+  const usingLiveKpiPreview = previewOutputs.length > 0;
+  const kpisToShow = usingLiveKpiPreview ? previewOutputs : outputs;
   const outputsByCategory: Record<string, OutputWithKpi[]> = {};
   for (const o of kpisToShow) {
     const cat = o.kpi_formula?.category ?? 'Other';
@@ -452,7 +466,7 @@ export default function ProjectDetailPage() {
     })),
     { key: 'total', title: 'Total', fields: TOTAL_COST_FIELDS },
   ];
-  const stageComparisonGroups = [
+  const stageComparisonGroups: StageComparisonGroup[] = [
     { key: 'project', title: 'Project Details', fields: PROJECT_STAGE_FIELDS as readonly string[] },
     ...groupedInputFields.map((group) => ({
       key: group.key,
@@ -460,23 +474,6 @@ export default function ProjectDetailPage() {
       fields: group.fields as readonly string[],
     })),
   ];
-  const getSnapshotValue = (snapshot: StageSnapshot, field: string): unknown => {
-    if (field in projectFieldLabels) {
-      return snapshot.project[field as keyof Project];
-    }
-    return snapshot.flatInputs[field];
-  };
-  const formatStageComparisonValue = (field: string, value: unknown): string => {
-    if (value == null || value === '') return '—';
-    if (field === 'project_year') return String(value);
-    if (['built_up_area', 'carpet_area', 'saleable_area', 'leasable_area'].includes(field) && typeof value === 'number') {
-      return `${value.toLocaleString()} sqft`;
-    }
-    const meta = PROJECT_INPUT_FIELD_META[field as ProjectInputField];
-    if (meta) return formatProjectInputValue(field as ProjectInputField, value);
-    if (typeof value === 'number') return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
-    return String(value);
-  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -622,57 +619,7 @@ export default function ProjectDetailPage() {
             <CardTitle className="text-base">Stage Comparison</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 z-10 min-w-56 bg-background">Field</TableHead>
-                    {stageSnapshots.map((snapshot) => (
-                      <TableHead key={snapshot.project.id} className="min-w-56">
-                        <span className="block font-medium">{getProjectStageLabel(snapshot.project.project_stage)}</span>
-                        <span className="block text-[11px] font-normal text-muted-foreground">
-                          {snapshot.project.status} · v{snapshot.project.version}
-                        </span>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stageComparisonGroups.map((group) => (
-                    <Fragment key={group.key}>
-                      <TableRow key={`${group.key}-heading`}>
-                        <TableCell
-                          colSpan={stageSnapshots.length + 1}
-                          className="sticky left-0 bg-muted/70 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                        >
-                          {group.title}
-                        </TableCell>
-                      </TableRow>
-                      {group.fields.map((field) => (
-                        <TableRow key={`${group.key}-${field}`}>
-                          <TableCell className="sticky left-0 z-10 bg-background text-xs font-medium text-muted-foreground">
-                            {getFieldLabel(field)}
-                          </TableCell>
-                          {stageSnapshots.map((snapshot, index) => {
-                            const value = getSnapshotValue(snapshot, field);
-                            const previousValue = index > 0 ? getSnapshotValue(stageSnapshots[index - 1], field) : value;
-                            const changed = index > 0 && stageValueChanged(value, previousValue);
-                            return (
-                              <TableCell
-                                key={`${snapshot.project.id}-${field}`}
-                                className={`text-sm ${changed ? 'border-l-2 border-amber-500 bg-amber-50 font-medium text-amber-950' : ''}`}
-                              >
-                                {formatStageComparisonValue(field, value)}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      ))}
-                    </Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <StageComparisonTable groups={stageComparisonGroups} snapshots={stageSnapshots} />
             <p className="mt-3 text-xs text-muted-foreground">
               Highlighted cells changed from the stage immediately to their left.
             </p>
@@ -714,7 +661,10 @@ export default function ProjectDetailPage() {
         <div className="space-y-4">
           <h2 className="text-lg font-semibold tracking-tight">
             KPI Outputs
-            {(project.status === 'submitted' || project.status === 'under_review') && (
+            {usingLiveKpiPreview && project.status === 'approved' && (
+              <span className="text-xs text-muted-foreground font-normal ml-2">(live recalculation from current inputs)</span>
+            )}
+            {usingLiveKpiPreview && (project.status === 'submitted' || project.status === 'under_review') && (
               <span className="text-xs text-muted-foreground font-normal ml-2">(preview — not yet persisted)</span>
             )}
           </h2>

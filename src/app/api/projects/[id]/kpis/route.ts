@@ -61,6 +61,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   });
   if (preview) return noStoreJson(outputs.map((output, index) => ({ ...output, kpi_formula: formulas[index] })));
 
+  const { error: deleteError } = await admin.from('project_kpi_outputs').delete().eq('project_id', id);
+  if (deleteError) return sanitizeDatabaseError('Clear previous KPI outputs', deleteError);
+
   const { data, error } = await admin.from('project_kpi_outputs').insert(outputs).select();
   if (error) return sanitizeDatabaseError('Store KPI outputs', error);
   await admin.from('audit_log').insert({

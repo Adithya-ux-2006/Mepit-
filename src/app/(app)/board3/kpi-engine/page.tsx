@@ -6,6 +6,7 @@ import { runLearningEngine } from '@/lib/learning-engine';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageSkeleton } from '@/components/ui/loading-buffer';
 import {
   Card,
   CardContent,
@@ -175,11 +176,7 @@ export default function KpiEnginePage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <PageSkeleton title="Loading KPI engine" rows={8} />;
   }
 
   return (

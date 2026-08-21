@@ -7,6 +7,7 @@ import { getProjectsByStatus } from '@/lib/api';
 import { useReviewActions } from '@/lib/use-review-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PageSkeleton } from '@/components/ui/loading-buffer';
 import {
   Card,
   CardContent,
@@ -100,11 +101,7 @@ function ApprovalsContent() {
   const actions = useReviewActions(onActionSuccess);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <PageSkeleton title="Loading approvals" rows={6} />;
   }
 
   const errorBanner = (msg: string | null) =>

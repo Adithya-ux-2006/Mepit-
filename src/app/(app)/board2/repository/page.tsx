@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { getProjects, getProjectKpiOutputs } from '@/lib/api';
+import { getProjects, previewKpiOutputs } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { PageSkeleton } from '@/components/ui/loading-buffer';
 import {
   Table,
   TableBody,
@@ -93,7 +94,7 @@ export default function RepositoryPage() {
       const selected = projects.filter((p) => selectedIds.includes(p.id));
       const data = await Promise.all(
         selected.map(async (project) => {
-          const outputs = await getProjectKpiOutputs(project.id);
+          const outputs = await previewKpiOutputs(project.id);
           return { project, outputs };
         })
       );
@@ -180,11 +181,7 @@ export default function RepositoryPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
-    );
+    return <PageSkeleton title="Loading project repository" rows={9} />;
   }
 
   return (

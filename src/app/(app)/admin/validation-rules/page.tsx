@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { PageSkeleton } from '@/components/ui/loading-buffer';
 import {
   Table,
   TableBody,
@@ -95,11 +96,7 @@ function ValidationRulesContent() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <PageSkeleton title="Loading validation rules" rows={8} />;
   }
 
   return (

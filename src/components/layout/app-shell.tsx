@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { Navigation } from '@/components/layout/navigation';
+import { RouteBuffer } from '@/components/ui/loading-buffer';
 
 const pageNames: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -26,10 +28,14 @@ function getPageName(pathname: string): string {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const visiblePendingPath = pendingPath && pendingPath !== pathname ? pendingPath : null;
 
   return (
     <div className="app-shell">
-      <Navigation />
+      <Navigation onNavigate={(href) => {
+        if (href !== pathname) setPendingPath(href);
+      }} />
       <div className="app-workspace">
         <header className="app-topbar">
           <div>
@@ -42,7 +48,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <main className="app-content">
-          <div className="page-enter">{children}</div>
+          <div className="app-content-wrap">
+            {visiblePendingPath && <RouteBuffer label={`Opening ${getPageName(visiblePendingPath)}`} />}
+            <div className="page-enter">{children}</div>
+          </div>
         </main>
       </div>
     </div>
