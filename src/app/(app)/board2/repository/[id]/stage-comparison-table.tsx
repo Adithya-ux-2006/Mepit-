@@ -123,13 +123,13 @@ export function StageComparisonTable({
                         className="text-sm"
                         style={changed ? {
                           position: 'relative',
-                          borderLeft: '4px solid #dc2626',
-                          backgroundColor: '#fef2f2',
-                          color: '#991b1b',
+                          borderLeft: '4px solid #2563eb',
+                          backgroundColor: '#eff6ff',
+                          color: '#1e40af',
                           fontWeight: 700,
                         } : undefined}
                       >
-                        {changed && <div style={{ position: 'absolute', top: 2, right: 4, fontSize: 9, color: '#dc2626', fontWeight: 700 }}>CHANGED</div>}
+                        {changed && <div style={{ position: 'absolute', top: 2, right: 4, fontSize: 9, color: '#2563eb', fontWeight: 700 }}>CHANGED</div>}
                         <span className="flex items-center gap-1.5">
                           {formatStageComparisonValue(field, value)}
                         </span>
