@@ -120,15 +120,17 @@ export function StageComparisonTable({
                     return (
                       <TableCell
                         key={`${snapshot.project.id}-${field}`}
-                        className={`text-sm ${changed ? 'font-semibold' : ''}`}
+                        className="text-sm"
                         style={changed ? {
-                          borderLeft: '3px solid #2563eb',
-                          backgroundColor: '#eff6ff',
-                          color: '#1e40af',
+                          position: 'relative',
+                          borderLeft: '4px solid #dc2626',
+                          backgroundColor: '#fef2f2',
+                          color: '#991b1b',
+                          fontWeight: 700,
                         } : undefined}
                       >
+                        {changed && <div style={{ position: 'absolute', top: 2, right: 4, fontSize: 9, color: '#dc2626', fontWeight: 700 }}>CHANGED</div>}
                         <span className="flex items-center gap-1.5">
-                          {changed && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#2563eb' }} />}
                           {formatStageComparisonValue(field, value)}
                         </span>
                       </TableCell>
