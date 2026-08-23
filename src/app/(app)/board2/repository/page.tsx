@@ -21,12 +21,26 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Download, GitCompareArrows, Eye } from 'lucide-react';
+import { Download, GitCompareArrows, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Project, ProjectKpiOutput, KpiFormula } from '@/types';
 import { getProjectStageLabel, PROJECT_STAGES } from '@/lib/project-stages';
 
 interface OutputWithKpi extends ProjectKpiOutput {
   kpi_formula?: KpiFormula;
+}
+
+interface ProjectGroup {
+  rootId: string;
+  projectName: string;
+  typology: string;
+  location: string;
+  year: number;
+  stages: Project[];
+}
+
+function getStageOrder(stage: string): number {
+  const index = PROJECT_STAGES.findIndex((s) => s.value === stage);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 export default function RepositoryPage() {
@@ -44,6 +58,7 @@ export default function RepositoryPage() {
     { project: Project; outputs: OutputWithKpi[] }[]
   >([]);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getProjects()
@@ -80,6 +95,37 @@ export default function RepositoryPage() {
       return true;
     });
   }, [projects, search, filterTypology, filterStage, filterLocation, filterYear, filterStatus]);
+
+  const projectGroups = useMemo(() => {
+    const groupMap = new Map<string, ProjectGroup>();
+    for (const p of filtered) {
+      const rootId = p.source_project_id ?? p.id;
+      if (!groupMap.has(rootId)) {
+        groupMap.set(rootId, {
+          rootId,
+          projectName: p.project_name,
+          typology: p.typology,
+          location: `${p.location_city}${p.location_state ? `, ${p.location_state}` : ''}`,
+          year: p.project_year,
+          stages: [],
+        });
+      }
+      groupMap.get(rootId)!.stages.push(p);
+    }
+    for (const group of groupMap.values()) {
+      group.stages.sort((a, b) => getStageOrder(a.project_stage) - getStageOrder(b.project_stage));
+    }
+    return [...groupMap.values()].sort((a, b) => a.projectName.localeCompare(b.projectName));
+  }, [filtered]);
+
+  const toggleGroup = (rootId: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(rootId)) next.delete(rootId);
+      else next.add(rootId);
+      return next;
+    });
+  };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -297,71 +343,46 @@ export default function RepositoryPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {filtered.length} projects shown &middot; Select {compareMode ? 'projects to compare' : '2+ approved projects to compare'}
+        {projectGroups.length} projects &middot; {filtered.length} stages &middot; Select {compareMode ? 'stages to compare' : '2+ stages to compare'}
       </p>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-8" />
-            <TableHead>Project Name</TableHead>
-            <TableHead>Typology</TableHead>
-            <TableHead>Project Stage</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Built Up Area</TableHead>
-            <TableHead>Year</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.length === 0 && (
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                No projects found.
-              </TableCell>
+              <TableHead className="w-8" />
+              <TableHead className="w-8" />
+              <TableHead>Project Name</TableHead>
+              <TableHead>Typology</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Year</TableHead>
+              <TableHead>Stages</TableHead>
             </TableRow>
-          )}
-          {filtered.map((project) => (
-            <TableRow key={project.id}>
-              <TableCell>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(project.id)}
-                  onChange={() => toggleSelect(project.id)}
-                  className="h-4 w-4 rounded border-input"
+          </TableHeader>
+          <TableBody>
+            {projectGroups.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  No projects found.
+                </TableCell>
+              </TableRow>
+            )}
+            {projectGroups.map((group) => {
+              const isExpanded = expandedGroups.has(group.rootId);
+              return (
+                <GroupRow
+                  key={group.rootId}
+                  group={group}
+                  isExpanded={isExpanded}
+                  onToggle={() => toggleGroup(group.rootId)}
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
                 />
-              </TableCell>
-              <TableCell>
-                <Link
-                  href={`/board2/repository/${project.id}`}
-                  className="font-medium text-foreground hover:underline inline-flex items-center gap-1"
-                >
-                  {project.project_name}
-                  <Eye className="h-3 w-3 text-muted-foreground" />
-                </Link>
-              </TableCell>
-              <TableCell>{project.typology}</TableCell>
-              <TableCell>{getProjectStageLabel(project.project_stage)}</TableCell>
-              <TableCell>{project.location_city}{project.location_state ? `, ${project.location_state}` : ''}</TableCell>
-              <TableCell>{project.built_up_area.toLocaleString()}</TableCell>
-              <TableCell>{project.project_year}</TableCell>
-              <TableCell>
-                <span
-                  className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                    project.status === 'approved'
-                      ? 'bg-green-50 text-green-700'
-                      : project.status === 'submitted' || project.status === 'under_review'
-                        ? 'bg-yellow-50 text-yellow-700'
-                        : 'bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  {project.status}
-                </span>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
 
       {/* Comparison View */}
       {compareMode && compareData.length >= 2 && (
@@ -369,7 +390,7 @@ export default function RepositoryPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
-                KPI Comparison ({compareData.length} projects)
+                KPI Comparison ({compareData.length} stages)
               </CardTitle>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={handleCompareExport}>
@@ -420,7 +441,7 @@ export default function RepositoryPage() {
                   {allKpiCodes.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={2 + compareData.length} className="text-center text-muted-foreground py-8">
-                        No KPI outputs available for the selected projects.
+                        No KPI outputs available for the selected stages.
                       </TableCell>
                     </TableRow>
                   )}
@@ -431,5 +452,98 @@ export default function RepositoryPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+function GroupRow({
+  group,
+  isExpanded,
+  onToggle,
+  selectedIds,
+  onToggleSelect,
+}: {
+  group: ProjectGroup;
+  isExpanded: boolean;
+  onToggle: () => void;
+  selectedIds: string[];
+  onToggleSelect: (id: string) => void;
+}) {
+  const allSelected = group.stages.every((s) => selectedIds.includes(s.id));
+  const someSelected = group.stages.some((s) => selectedIds.includes(s.id));
+
+  const toggleAll = () => {
+    for (const s of group.stages) {
+      if (!allSelected) {
+        if (!selectedIds.includes(s.id)) onToggleSelect(s.id);
+      } else {
+        if (selectedIds.includes(s.id)) onToggleSelect(s.id);
+      }
+    }
+  };
+
+  return (
+    <>
+      <TableRow className="bg-muted/30 cursor-pointer hover:bg-muted/50" onClick={onToggle}>
+        <TableCell>
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+            onChange={(e) => { e.stopPropagation(); toggleAll(); }}
+            className="h-4 w-4 rounded border-input"
+          />
+        </TableCell>
+        <TableCell>
+          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </TableCell>
+        <TableCell className="font-semibold">{group.projectName}</TableCell>
+        <TableCell>{group.typology}</TableCell>
+        <TableCell>{group.location}</TableCell>
+        <TableCell>{group.year}</TableCell>
+        <TableCell>
+          <span className="text-xs text-muted-foreground">{group.stages.length} stage{group.stages.length !== 1 ? 's' : ''}</span>
+        </TableCell>
+      </TableRow>
+      {isExpanded && group.stages.map((stage) => (
+        <TableRow key={stage.id} className="hover:bg-muted/20">
+          <TableCell>
+            <input
+              type="checkbox"
+              checked={selectedIds.includes(stage.id)}
+              onChange={() => onToggleSelect(stage.id)}
+              className="h-4 w-4 rounded border-input"
+            />
+          </TableCell>
+          <TableCell />
+          <TableCell className="pl-10">
+            <Link
+              href={`/board2/repository/${stage.id}`}
+              className="text-foreground hover:underline inline-flex items-center gap-1"
+            >
+              {getProjectStageLabel(stage.project_stage)}
+              <Eye className="h-3 w-3 text-muted-foreground" />
+            </Link>
+          </TableCell>
+          <TableCell />
+          <TableCell />
+          <TableCell />
+          <TableCell>
+            <span
+              className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                stage.status === 'approved'
+                  ? 'bg-green-50 text-green-700'
+                  : stage.status === 'submitted' || stage.status === 'under_review'
+                    ? 'bg-yellow-50 text-yellow-700'
+                    : stage.status === 'rejected'
+                      ? 'bg-red-50 text-red-700'
+                      : 'bg-gray-50 text-gray-600'
+              }`}
+            >
+              {stage.status}
+            </span>
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   );
 }
