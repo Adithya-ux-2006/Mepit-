@@ -35,6 +35,7 @@ import {
   LogIn,
   RefreshCw,
   Save,
+  Sparkles,
   X,
 } from 'lucide-react';
 import {
@@ -120,6 +121,446 @@ const defaultForm: FormState = {
   leasable_area: null,
   ...EXISTING_FIELD_DEFAULTS,
 };
+
+interface TypologyProfile {
+  carpetPct: number;
+  saleablePct: number;
+  leasablePct: number;
+  plantRoomPct: number;
+  leasablePlantRoomPct: number;
+  shaftAreaPct: number;
+  occupancyDensityOffice: number;
+  occupancyDensityRetail: number;
+  occupancyDensityFb: number;
+  lightingLoadW: number;
+  lightingGainOffice: number;
+  lightingGainRetail: number;
+  lightingGainFb: number;
+  equipmentGainOffice: number;
+  equipmentGainRetail: number;
+  equipmentGainFb: number;
+  coolingLoadDensity: number;
+  cfmSqft: number;
+  transformerDensity: number;
+  dgLoadingFactor: number;
+  hvacCost: number;
+  electricalCost: number;
+  dgCost: number;
+  fireFightingCost: number;
+  stpCost: number;
+  pheCost: number;
+  bmsCost: number;
+  fapaCost: number;
+  cctvCost: number;
+  totalMepCost: number;
+  outdoorDbTemp: number;
+  outdoorWbTemp: number;
+  diversity: number;
+}
+
+const TYPOLOGY_PROFILES: Record<string, TypologyProfile> = {
+  Office: {
+    carpetPct: 0.65, saleablePct: 0.75, leasablePct: 0.70,
+    plantRoomPct: 0.035, leasablePlantRoomPct: 0.015, shaftAreaPct: 0.015,
+    occupancyDensityOffice: 100, occupancyDensityRetail: 0, occupancyDensityFb: 0,
+    lightingLoadW: 1.2, lightingGainOffice: 1.0, lightingGainRetail: 0, lightingGainFb: 0,
+    equipmentGainOffice: 1.5, equipmentGainRetail: 0, equipmentGainFb: 0,
+    coolingLoadDensity: 400, cfmSqft: 1.8,
+    transformerDensity: 5.5, dgLoadingFactor: 0.8,
+    hvacCost: 850, electricalCost: 650, dgCost: 180,
+    fireFightingCost: 250, stpCost: 120, pheCost: 150,
+    bmsCost: 80, fapaCost: 120, cctvCost: 60, totalMepCost: 2460,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.8,
+  },
+  Retail: {
+    carpetPct: 0.55, saleablePct: 0.60, leasablePct: 0.58,
+    plantRoomPct: 0.04, leasablePlantRoomPct: 0.02, shaftAreaPct: 0.02,
+    occupancyDensityOffice: 0, occupancyDensityRetail: 60, occupancyDensityFb: 40,
+    lightingLoadW: 2.0, lightingGainOffice: 0, lightingGainRetail: 1.8, lightingGainFb: 1.5,
+    equipmentGainOffice: 0, equipmentGainRetail: 2.0, equipmentGainFb: 2.5,
+    coolingLoadDensity: 350, cfmSqft: 2.0,
+    transformerDensity: 6.0, dgLoadingFactor: 0.85,
+    hvacCost: 900, electricalCost: 700, dgCost: 200,
+    fireFightingCost: 280, stpCost: 130, pheCost: 160,
+    bmsCost: 85, fapaCost: 130, cctvCost: 70, totalMepCost: 2655,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.75,
+  },
+  'Mixed Use': {
+    carpetPct: 0.60, saleablePct: 0.68, leasablePct: 0.65,
+    plantRoomPct: 0.04, leasablePlantRoomPct: 0.018, shaftAreaPct: 0.018,
+    occupancyDensityOffice: 100, occupancyDensityRetail: 60, occupancyDensityFb: 40,
+    lightingLoadW: 1.5, lightingGainOffice: 1.0, lightingGainRetail: 1.5, lightingGainFb: 1.2,
+    equipmentGainOffice: 1.5, equipmentGainRetail: 1.8, equipmentGainFb: 2.0,
+    coolingLoadDensity: 380, cfmSqft: 1.9,
+    transformerDensity: 5.8, dgLoadingFactor: 0.82,
+    hvacCost: 880, electricalCost: 680, dgCost: 190,
+    fireFightingCost: 260, stpCost: 125, pheCost: 155,
+    bmsCost: 82, fapaCost: 125, cctvCost: 65, totalMepCost: 2562,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.78,
+  },
+  Residential: {
+    carpetPct: 0.70, saleablePct: 0.80, leasablePct: 0.75,
+    plantRoomPct: 0.03, leasablePlantRoomPct: 0.012, shaftAreaPct: 0.012,
+    occupancyDensityOffice: 0, occupancyDensityRetail: 0, occupancyDensityFb: 0,
+    lightingLoadW: 0.8, lightingGainOffice: 0, lightingGainRetail: 0, lightingGainFb: 0,
+    equipmentGainOffice: 0.8, equipmentGainRetail: 0, equipmentGainFb: 0,
+    coolingLoadDensity: 450, cfmSqft: 1.5,
+    transformerDensity: 4.5, dgLoadingFactor: 0.7,
+    hvacCost: 700, electricalCost: 550, dgCost: 150,
+    fireFightingCost: 200, stpCost: 100, pheCost: 130,
+    bmsCost: 60, fapaCost: 100, cctvCost: 50, totalMepCost: 2040,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.7,
+  },
+  Hospitality: {
+    carpetPct: 0.55, saleablePct: 0.60, leasablePct: 0.58,
+    plantRoomPct: 0.045, leasablePlantRoomPct: 0.025, shaftAreaPct: 0.02,
+    occupancyDensityOffice: 0, occupancyDensityRetail: 0, occupancyDensityFb: 30,
+    lightingLoadW: 1.8, lightingGainOffice: 0, lightingGainRetail: 0, lightingGainFb: 1.5,
+    equipmentGainOffice: 0, equipmentGainRetail: 0, equipmentGainFb: 3.0,
+    coolingLoadDensity: 320, cfmSqft: 2.2,
+    transformerDensity: 6.5, dgLoadingFactor: 0.85,
+    hvacCost: 950, electricalCost: 750, dgCost: 210,
+    fireFightingCost: 300, stpCost: 140, pheCost: 170,
+    bmsCost: 90, fapaCost: 140, cctvCost: 75, totalMepCost: 2825,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.75,
+  },
+  Healthcare: {
+    carpetPct: 0.55, saleablePct: 0.60, leasablePct: 0.58,
+    plantRoomPct: 0.05, leasablePlantRoomPct: 0.03, shaftAreaPct: 0.025,
+    occupancyDensityOffice: 80, occupancyDensityRetail: 0, occupancyDensityFb: 0,
+    lightingLoadW: 2.2, lightingGainOffice: 1.2, lightingGainRetail: 0, lightingGainFb: 0,
+    equipmentGainOffice: 2.0, equipmentGainRetail: 0, equipmentGainFb: 0,
+    coolingLoadDensity: 280, cfmSqft: 2.5,
+    transformerDensity: 7.0, dgLoadingFactor: 0.9,
+    hvacCost: 1100, electricalCost: 850, dgCost: 250,
+    fireFightingCost: 320, stpCost: 150, pheCost: 180,
+    bmsCost: 100, fapaCost: 150, cctvCost: 80, totalMepCost: 3180,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.85,
+  },
+  Industrial: {
+    carpetPct: 0.75, saleablePct: 0.85, leasablePct: 0.80,
+    plantRoomPct: 0.025, leasablePlantRoomPct: 0.01, shaftAreaPct: 0.01,
+    occupancyDensityOffice: 120, occupancyDensityRetail: 0, occupancyDensityFb: 0,
+    lightingLoadW: 1.0, lightingGainOffice: 0.8, lightingGainRetail: 0, lightingGainFb: 0,
+    equipmentGainOffice: 1.0, equipmentGainRetail: 0, equipmentGainFb: 0,
+    coolingLoadDensity: 500, cfmSqft: 1.5,
+    transformerDensity: 8.0, dgLoadingFactor: 0.75,
+    hvacCost: 600, electricalCost: 500, dgCost: 140,
+    fireFightingCost: 180, stpCost: 90, pheCost: 120,
+    bmsCost: 50, fapaCost: 90, cctvCost: 45, totalMepCost: 1815,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.7,
+  },
+  'Data Centre': {
+    carpetPct: 0.50, saleablePct: 0.55, leasablePct: 0.52,
+    plantRoomPct: 0.06, leasablePlantRoomPct: 0.04, shaftAreaPct: 0.025,
+    occupancyDensityOffice: 150, occupancyDensityRetail: 0, occupancyDensityFb: 0,
+    lightingLoadW: 0.6, lightingGainOffice: 0.5, lightingGainRetail: 0, lightingGainFb: 0,
+    equipmentGainOffice: 5.0, equipmentGainRetail: 0, equipmentGainFb: 0,
+    coolingLoadDensity: 200, cfmSqft: 3.0,
+    transformerDensity: 10.0, dgLoadingFactor: 0.95,
+    hvacCost: 1500, electricalCost: 1200, dgCost: 350,
+    fireFightingCost: 400, stpCost: 100, pheCost: 150,
+    bmsCost: 120, fapaCost: 180, cctvCost: 100, totalMepCost: 4100,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.9,
+  },
+  Institutional: {
+    carpetPct: 0.65, saleablePct: 0.72, leasablePct: 0.68,
+    plantRoomPct: 0.035, leasablePlantRoomPct: 0.015, shaftAreaPct: 0.015,
+    occupancyDensityOffice: 80, occupancyDensityRetail: 0, occupancyDensityFb: 0,
+    lightingLoadW: 1.0, lightingGainOffice: 0.8, lightingGainRetail: 0, lightingGainFb: 0,
+    equipmentGainOffice: 1.2, equipmentGainRetail: 0, equipmentGainFb: 0,
+    coolingLoadDensity: 420, cfmSqft: 1.7,
+    transformerDensity: 5.0, dgLoadingFactor: 0.75,
+    hvacCost: 750, electricalCost: 600, dgCost: 160,
+    fireFightingCost: 220, stpCost: 110, pheCost: 140,
+    bmsCost: 70, fapaCost: 110, cctvCost: 55, totalMepCost: 2215,
+    outdoorDbTemp: 36, outdoorWbTemp: 28, diversity: 0.75,
+  },
+};
+
+function generateAutoFillData(form: FormState): Record<string, unknown> {
+  const bua = form.built_up_area ?? 0;
+  if (bua <= 0) return {};
+
+  const profile = TYPOLOGY_PROFILES[form.typology] ?? TYPOLOGY_PROFILES.Office;
+  const carpetArea = Math.round(bua * profile.carpetPct);
+  const saleableArea = Math.round(bua * profile.saleablePct);
+  const leasableArea = Math.round(bua * profile.leasablePct);
+  const plantRoomArea = Math.round(bua * profile.plantRoomPct);
+  const leasablePlantRoom = Math.round(bua * profile.leasablePlantRoomPct);
+  const shaftArea = Math.round(bua * profile.shaftAreaPct);
+  const officeArea = Math.round(bua * 0.7);
+  const fbArea = Math.round(bua * 0.1);
+  const grossArea = Math.round(bua * 1.05);
+
+  const totalTr = Math.round(bua / profile.coolingLoadDensity);
+  const totalAirflowCfm = Math.round(bua * profile.cfmSqft);
+  const transformerCapacity = Math.round(bua * profile.transformerDensity);
+  const tenantPower = Math.round(transformerCapacity * 0.65);
+  const commonAreaPower = Math.round(transformerCapacity * 0.35);
+  const dgCapacity = Math.round(transformerCapacity * 0.6);
+
+  const chillerTonnageWater = Math.round(totalTr * 0.7);
+  const chillerTonnageAir = totalTr - chillerTonnageWater;
+  const chwPrimaryFlowGpm = Math.round(totalTr * 3);
+  const chwPrimaryPowerKw = Math.round(chwPrimaryFlowGpm * 0.05);
+  const chwSecondaryFlowGpm = Math.round(chwPrimaryFlowGpm * 0.8);
+  const chwSecondaryPowerKw = Math.round(chwSecondaryFlowGpm * 0.04);
+  const condenserFlowGpm = Math.round(chwPrimaryFlowGpm * 1.2);
+  const condenserPowerKw = Math.round(condenserFlowGpm * 0.035);
+
+  const dehumidifiedCfm = Math.round(totalAirflowCfm * 0.3);
+  const freshAirflow = Math.round(totalAirflowCfm * 0.25);
+  const ahuFanKw = Math.round(totalAirflowCfm * 0.0015);
+  const tfahuFanKw = Math.round(freshAirflow * 0.002);
+
+  const commonAreaPowerVa = Math.round(commonAreaPower * 1000 / carpetArea * 100) / 100;
+  const tenantPowerVa = Math.round(tenantPower * 1000 / carpetArea * 100) / 100;
+  const totalConnectedLoad = Math.round(transformerCapacity * 0.9);
+  const totalDemandLoad = Math.round(totalConnectedLoad * profile.diversity);
+
+  const stpKld = Math.round(bua * 0.00005);
+  const ugtRawWater = Math.round(stpKld * 1.2);
+  const ugtTreatedWater = Math.round(stpKld * 0.8);
+  const ugtDomesticWater = Math.round(stpKld * 0.6);
+  const ugtFlushingWater = Math.round(stpKld * 0.4);
+  const ohtDomesticWater = Math.round(stpKld * 0.3);
+  const ohtFlushingWater = Math.round(stpKld * 0.2);
+
+  const ffUndergroundTank = Math.round(bua * 0.00002);
+  const ffOverheadTank = Math.round(ffUndergroundTank * 0.5);
+
+  const occupancyHvac = bua / (profile.occupancyDensityOffice || 100);
+  const occupancyPhe = bua / (profile.occupancyDensityOffice || 100);
+
+  return {
+    built_up_area: bua,
+    carpet_area: carpetArea,
+    saleable_area: saleableArea,
+    leasable_area: leasableArea,
+    plant_room_area: plantRoomArea,
+    leasable_plant_room_area: leasablePlantRoom,
+    shaft_area: shaftArea,
+    office_area: officeArea,
+    fb_area: fbArea,
+    gross_area: grossArea,
+    occupancy_density_office: profile.occupancyDensityOffice || null,
+    occupancy_density_fb: profile.occupancyDensityFb || null,
+    occupancy_hvac_bua: Math.round(profile.occupancyDensityOffice || 100),
+    occupancy_phe_bua: Math.round(profile.occupancyDensityOffice || 100),
+    total_tr: totalTr,
+    total_airflow_cfm: totalAirflowCfm,
+    hvac_strategy: 'Central Plant',
+    lighting_load_w: profile.lightingLoadW,
+    transformer_capacity_kva: transformerCapacity,
+    tenant_power_kva: tenantPower,
+    common_area_power_kva: commonAreaPower,
+    dg_capacity_kva: dgCapacity,
+    dg_loading_factor: profile.dgLoadingFactor,
+    annual_energy_kwh: Math.round(bua * 150),
+    operating_hours: 3000,
+    office_false_ceiling: 0.3,
+    corridor_false_ceiling: 0.25,
+    building_heights: Math.round(bua / 5000 * 3),
+    floor_to_floor_height: 3.8,
+    chiller_plant_room_location: 'Basement',
+    central_ac_plant_room_area: Math.round(bua * 0.02),
+    central_ac_plant_location: 'Basement Level 1',
+    standard_followed: 'NBC 2016',
+    retail_area: Math.round(bua * 0.1),
+    total_ac_tonnage: totalTr,
+    diversity: profile.diversity,
+    type_of_chiller_select: 'Water Cooled',
+    chiller_tonnage_water: chillerTonnageWater,
+    chiller_tonnage_air: chillerTonnageAir,
+    chw_pumping_type: 'Secondary Variable',
+    chw_primary_flow_gpm: chwPrimaryFlowGpm,
+    chw_primary_power_kw: chwPrimaryPowerKw,
+    chw_secondary_flow_gpm: chwSecondaryFlowGpm,
+    chw_secondary_power_kw: chwSecondaryPowerKw,
+    condenser_pumping_type: 'Variable',
+    condenser_flow_gpm: condenserFlowGpm,
+    condenser_power_kw: condenserPowerKw,
+    ct_condenser_water_in: 37,
+    ct_condenser_water_out: 32,
+    ct_wet_bulb: 28,
+    ct_fan_type: 'Axial',
+    ct_fan_motor_rating_kw: Math.round(condenserFlowGpm * 0.01),
+    cpo: 'Yes',
+    cpm: 'Yes',
+    total_dehumidified_airflow: dehumidifiedCfm,
+    chw_supply_temp: 6.5,
+    chw_return_temp: 13.5,
+    ahu_fan_type: 'Plug Fan with VFD',
+    ahu_filtration: 'G4 + F7',
+    ahu_fan_kw: ahuFanKw,
+    ahu_scope_select: 'Developer',
+    total_fresh_airflow: freshAirflow,
+    tfahu_chw_supply_temp: 8,
+    tfahu_chw_return_temp: 14,
+    tfahu_fan_type: 'Plug Fan with VFD',
+    tfahu_filtration: 'G4 + F7 + HEPA',
+    tfahu_fan_kw: tfahuFanKw,
+    fresh_air_precooling: 'HRW',
+    passive_desiccant_wheel: 'No',
+    pct_extra_fresh_air: 20,
+    tfahu_scope: 'Developer',
+    server_cooling_source: 'Chilled Water',
+    server_cooling_mode: 'express riser',
+    server_cooling_scope: 'Tenant',
+    server_load: Math.round(bua * 0.001),
+    toilet_exhaust: 'Yes',
+    toilet_exhaust_acph: 10,
+    kitchen_exhaust: 'Yes',
+    kitchen_exhaust_acph: 15,
+    owc_exhaust: 'Yes',
+    owc_exhaust_acph: 8,
+    stp_exhaust_acph: 10,
+    basement_ventilation: 'Yes',
+    staircase_pressurization: 'Yes',
+    lift_well_pressurization: 'Yes',
+    lift_lobby_pressurization: 'Yes',
+    smoke_extraction_tenant: 'Yes',
+    power_supply_sources: '2',
+    common_area_power_kw: commonAreaPower,
+    common_area_power_density_kw: Math.round(commonAreaPower / bua * 10000) / 10000,
+    common_area_power_density_kva: commonAreaPowerVa,
+    tenant_area_power_kw: tenantPower,
+    tenant_area_power_density_kw: Math.round(tenantPower / bua * 10000) / 10000,
+    tenant_area_power_density_kva: tenantPowerVa,
+    total_connected_load_kw: totalConnectedLoad,
+    total_demand_load_kw: totalDemandLoad,
+    carpet_area_electrical: carpetArea,
+    transformer_capacity_kw: Math.round(transformerCapacity * 0.8),
+    transformer_loading_pct_val: 75,
+    transformer_diversity_pct: 80,
+    transformer_config: 'N+1',
+    transformer_type: 'Cast resin',
+    transformer_location: 'Basement Level 1',
+    dg_capacity_kw: dgCapacity,
+    dg_loading_factor_pct: profile.dgLoadingFactor * 100,
+    dg_diversity_pct: 80,
+    dg_config: 'N+1',
+    dg_type: 'Silent',
+    dg_location: 'Basement Level 1 / Terrace',
+    ev_charging_provision: 'Yes',
+    ev_car_spaces: Math.round(bua / 5000),
+    ev_bike_spaces: Math.round(bua / 2000),
+    water_distribution_type: 'Hydropneumatic',
+    total_occupants_water: Math.round(occupancyPhe),
+    ugt_raw_water_kl: ugtRawWater,
+    ugt_treated_water_kl: ugtTreatedWater,
+    ugt_domestic_water_kl: ugtDomesticWater,
+    ugt_flushing_water_kl: ugtFlushingWater,
+    ugt_cooling_tower_makeup_kl: Math.round(totalTr * 0.5),
+    ugt_irrigation_kl: Math.round(bua * 0.00001),
+    ugt_condensate_kl: Math.round(totalTr * 0.2),
+    oht_domestic_water_kl: ohtDomesticWater,
+    oht_flushing_water_kl: ohtFlushingWater,
+    oht_cooling_tower_makeup_kl: Math.round(totalTr * 0.3),
+    stp_kld: stpKld,
+    stp_type: 'MBR',
+    stp_location: 'Basement Level 1',
+    water_meters: 'Municipal',
+    bms_water_meters: 'Yes',
+    drainage_system: 'Double Stack',
+    kitchen_waste_stack: 'Yes',
+    rainwater_tank_capacity_m3: Math.round(bua * 0.00002),
+    rainwater_tank_location: 'Basement',
+    recharge_capacity_m3: Math.round(bua * 0.00001),
+    centralised_garbage_room: 'Yes',
+    garbage_room_location: 'Basement Level 1',
+    owc_capacity: Math.round(bua * 0.0001),
+    owc_location: 'Basement Level 1',
+    ff_underground_tank_kl: ffUndergroundTank,
+    ff_intermediate_tank_kl: Math.round(ffUndergroundTank * 0.3),
+    ff_overhead_tank_kl: ffOverheadTank,
+    ff_drencher: 'Yes',
+    ff_express_riser: 'Yes',
+    ff_dry_riser: 'Yes',
+    ff_wet_riser: 'Yes',
+    ff_sprinkler_riser: 'Yes',
+    ff_ev_protection: 'Yes',
+    ff_pumps_system: 'Dual + Jockey',
+    express_risers: 'Yes',
+    intermediate_tank: 'Yes',
+    drencher_podium: 'Yes',
+    drencher_typical: 'Yes',
+    fapa_system: 'Addressable',
+    fapa_addressable: 'UL/FM',
+    fapa_cables_type: 'FR',
+    fapa_technology: 'Analog Addressable',
+    fapa_cables: 'FR',
+    cctv_type: 'IP Based',
+    security_access_control: 'Yes',
+    glazing_u_value: 2.5,
+    vlt: 40,
+    glazing_shgc: 0.25,
+    glazing_height: 1.5,
+    spandrel_height: 0.8,
+    wall_u_value: 0.4,
+    spandrel_u_value: 0.3,
+    roof_u_value: 0.25,
+    wwr: 40,
+    punched_windows: 'Yes',
+    facade_power_controller: 'No',
+    hvac_cost: profile.hvacCost,
+    electrical_cost: profile.electricalCost,
+    dg_cost: profile.dgCost,
+    fire_fighting_cost: profile.fireFightingCost,
+    stp_cost: profile.stpCost,
+    phe_cost: profile.pheCost,
+    bms_cost: profile.bmsCost,
+    fapa_cost: profile.fapaCost,
+    cctv_cost: profile.cctvCost,
+    total_mep_cost: profile.totalMepCost,
+    outdoor_db_temp: profile.outdoorDbTemp,
+    outdoor_db_temp_source: 'ASHRAE 2022',
+    outdoor_wb_temp: profile.outdoorWbTemp,
+    outdoor_wb_temp_source: 'ASHRAE 2022',
+    design_temperature_office: 24,
+    iaq_fresh_air: 'ASHRAE 62.1',
+    occupancy_lobby: 50,
+    occupancy_thermal_setpoint_office: 24,
+    occupancy_thermal_setpoint_retail: 24,
+    occupancy_thermal_setpoint_fb: 22,
+    occupancy_thermal_setpoint_lobby: 25,
+    lighting_gain_office: profile.lightingGainOffice,
+    lighting_gain_retail: profile.lightingGainRetail,
+    lighting_gain_fb: profile.lightingGainFb,
+    equipment_gain_office: profile.equipmentGainOffice,
+    equipment_gain_retail: profile.equipmentGainRetail,
+    equipment_gain_fb: profile.equipmentGainFb,
+    equipment_thermal_load: profile.equipmentGainOffice,
+    diversity_considered: profile.diversity,
+    type_of_chiller: 'Centrifugal',
+    chiller_configuration: `${chillerTonnageWater}TR x ${Math.ceil(chillerTonnageWater / 300)} nos + ${chillerTonnageAir}TR x ${Math.ceil(chillerTonnageAir / 200)} nos`,
+    chiller_parameters: 'Primary-Secondary with VFD',
+    refrigerant_used: 'R-134a / R-410A',
+    critical_room_hvac: 'DX Split for UPS/Server Rooms',
+    ahu_scope: 'Developer',
+    cfm_sqft: profile.cfmSqft,
+    ahu_filtration_strategy: 'G4 + F7 + F9',
+    hvac_filtration_strategy: 'G4 + F7 + HEPA for TFahu',
+    primary_pump: 'with VFD',
+    secondary_pump: 'with VFD',
+    condenser_pump: 'VFD',
+    cooling_towers_config: 'Induced Draft Counter Flow',
+    cooling_tower_height: 3.5,
+    pantry_exhaust: '15 ACPH',
+    ventilation_electrical_room: 'Exhaust Fan 10 ACPH',
+    smoke_extraction_tenants: 'Dedicated Smoke Extract AHU',
+    ventilation_electrical_room_typ: 'Exhaust Fan 10 ACPH',
+    hvac_package_cost_lumpsum: Math.round(bua * profile.hvacCost),
+    electrical_package_cost_lumpsum: Math.round(bua * profile.electricalCost),
+    cctv_package_cost_lumpsum: Math.round(bua * profile.cctvCost),
+    owc_cost_rs_sqft: 50,
+    phe_package_cost_lumpsum: Math.round(bua * (profile.stpCost + profile.pheCost)),
+    ff_package_cost_lumpsum: Math.round(bua * profile.fireFightingCost),
+    fapa_package_cost_lumpsum: Math.round(bua * profile.fapaCost),
+    occupancy_density_retail: profile.occupancyDensityRetail || null,
+  };
+}
 
 function buildFormFromProject(
   project: Project,
@@ -544,6 +985,8 @@ function CreateProjectForm() {
   const [refreshingSession, setRefreshingSession] = useState(false);
   const [kpiWarnings, setKpiWarnings] = useState<KpiMissingGroup[]>([]);
   const [kpiWarningsConfirmed, setKpiWarningsConfirmed] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
+  const [showAutoFillConfirm, setShowAutoFillConfirm] = useState(false);
   const sourceQueryLoaded = useRef(false);
   const dirtyRef = useRef(false);
   const persistingRef = useRef(false);
@@ -576,6 +1019,38 @@ function CreateProjectForm() {
     setKpiWarnings([]);
     setKpiWarningsConfirmed(false);
   }, []);
+
+  const handleAutoFill = useCallback(() => {
+    if (!form.typology) {
+      setImportMessage('Error: Please select a typology first before auto-filling.');
+      return;
+    }
+    if (!form.built_up_area || form.built_up_area <= 0) {
+      setImportMessage('Error: Please enter Built Up Area (BUA) first before auto-filling.');
+      return;
+    }
+    setShowAutoFillConfirm(true);
+  }, [form.typology, form.built_up_area]);
+
+  const confirmAutoFill = useCallback(() => {
+    const autoData = generateAutoFillData(form);
+    const updatedFields: string[] = [];
+
+    for (const [key, value] of Object.entries(autoData)) {
+      if (value !== null && value !== undefined && value !== '') {
+        setForm((prev) => ({ ...prev, [key]: value }));
+        updatedFields.push(key);
+      }
+    }
+
+    dirtyRef.current = true;
+    setImportMessage(`Auto-filled ${updatedFields.length} fields based on ${form.typology} typology.`);
+    setSaveMessage('');
+    setError('');
+    setKpiWarnings([]);
+    setKpiWarningsConfirmed(false);
+    setShowAutoFillConfirm(false);
+  }, [form]);
 
   const resetMessages = useCallback(() => {
     setError('');
@@ -1312,17 +1787,57 @@ function CreateProjectForm() {
                 : 'Enter details for an entirely new project.'}
           </p>
         </div>
-        <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
-          <Clock3 className="h-4 w-4" />
-          {lastAutosavedAt
-            ? 'Saved ' + lastAutosavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : 'Autosave on'}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleAutoFill}
+          >
+            <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+            Auto-Fill Bot
+          </Button>
+          <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+            <Clock3 className="h-4 w-4" />
+            {lastAutosavedAt
+              ? 'Saved ' + lastAutosavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'Autosave on'}
+          </div>
         </div>
       </div>
 
       {draftRecovered && (
         <div className="border-l-2 border-emerald-600 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           Recovered your autosaved work from this browser.
+        </div>
+      )}
+
+      {importMessage && (
+        <div className={`border-l-2 px-4 py-3 text-sm ${importMessage.startsWith('Error') ? 'border-red-600 bg-red-50 text-red-800' : 'border-blue-600 bg-blue-50 text-blue-800'}`}>
+          {importMessage}
+        </div>
+      )}
+
+      {showAutoFillConfirm && (
+        <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
+          <p className="text-sm font-medium text-blue-800 mb-2">
+            Auto-fill will populate all engineering fields with realistic values for:
+          </p>
+          <ul className="text-xs text-blue-700 mb-3 space-y-1">
+            <li>• Typology: <strong>{form.typology}</strong></li>
+            <li>• Built Up Area: <strong>{form.built_up_area?.toLocaleString()} sq. ft</strong></li>
+          </ul>
+          <p className="text-xs text-blue-600 mb-3">
+            This will overwrite any existing values in the engineering fields. Project details (name, city, etc.) will not be changed.
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" onClick={confirmAutoFill}>
+              Confirm Auto-Fill
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setShowAutoFillConfirm(false)}>
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
 

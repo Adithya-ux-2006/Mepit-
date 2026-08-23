@@ -299,24 +299,24 @@ function getBenchmark(
         : { status: 'warn', note: `Target: 1-2% of BUA (currently ${val.toFixed(1)}%)` };
     case 'COOLING_LOAD_DENSITY':
       return val >= 300 && val <= 500
-        ? { status: 'good', note: 'Within benchmark (300-500 sq. ft/TR)' }
-        : { status: 'warn', note: `Benchmark: 350-400+ sq. ft/TR (currently ${val.toFixed(0)})` };
+        ? { status: 'good', note: 'Within benchmark (300-500 sqft/TR)' }
+        : { status: 'warn', note: `Benchmark: 350-400+ sqft/TR (currently ${val.toFixed(0)})` };
     case 'CFM_SQFT':
       return val >= 1.7 && val <= 2.5
-        ? { status: 'good', note: 'Within benchmark (1.7-2.5 CFM/sq. ft)' }
-        : { status: 'warn', note: `Benchmark: 1.7-2.0 CFM/sq. ft (CHW) or 2+ (VRF)` };
+        ? { status: 'good', note: 'Within benchmark (1.7-2.5 CFM/sqft)' }
+        : { status: 'warn', note: `Benchmark: 1.7-2.0 CFM/sqft (CHW) or 2+ (VRF)` };
     case 'TRANSFORMER_DENSITY':
       return val >= 4 && val <= 7
-        ? { status: 'good', note: 'Within benchmark (~5.5 VA/sq. ft)' }
-        : { status: 'warn', note: `Benchmark: ~5.5 VA/sq. ft` };
+        ? { status: 'good', note: 'Within benchmark (~5.5 VA/sqft)' }
+        : { status: 'warn', note: `Benchmark: ~5.5 VA/sqft` };
     case 'HVAC_RS_SQFT':
       return val >= 200 && val <= 400
-        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sq. ft BUA)' }
-        : { status: 'warn', note: `Benchmark: Rs 250-300/sq. ft BUA (currently Rs ${val.toFixed(0)})` };
+        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sqft BUA)' }
+        : { status: 'warn', note: `Benchmark: Rs 250-300/sqft BUA (currently Rs ${val.toFixed(0)})` };
     case 'ELECTRICAL_RS_SQFT':
       return val >= 200 && val <= 400
-        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sq. ft BUA)' }
-        : { status: 'warn', note: `Benchmark: Rs 250-300/sq. ft BUA (currently Rs ${val.toFixed(0)})` };
+        ? { status: 'good', note: 'Within benchmark (Rs 250-300/sqft BUA)' }
+        : { status: 'warn', note: `Benchmark: Rs 250-300/sqft BUA (currently Rs ${val.toFixed(0)})` };
     case 'TOTAL_MEP_RS_SQFT':
       return val >= 500 && val <= 900
         ? { status: 'good', note: 'Within aggregate MEP benchmark' }

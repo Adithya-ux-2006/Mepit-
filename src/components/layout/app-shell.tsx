@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { Navigation } from '@/components/layout/navigation';
@@ -26,10 +26,20 @@ function getPageName(pathname: string): string {
   return parent ? pageNames[parent] : 'Workspace';
 }
 
+function isSameRouteSection(pending: string, current: string): boolean {
+  return current === pending || current.startsWith(`${pending}/`);
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [pendingPath, setPendingPath] = useState<string | null>(null);
-  const visiblePendingPath = pendingPath && pendingPath !== pathname ? pendingPath : null;
+  const visiblePendingPath = pendingPath && pendingPath !== pathname && !isSameRouteSection(pendingPath, pathname) ? pendingPath : null;
+
+  useEffect(() => {
+    if (pendingPath && isSameRouteSection(pendingPath, pathname)) {
+      setPendingPath(null);
+    }
+  }, [pathname, pendingPath]);
 
   return (
     <div className="app-shell">

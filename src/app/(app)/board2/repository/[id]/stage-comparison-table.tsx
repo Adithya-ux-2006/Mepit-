@@ -120,9 +120,12 @@ export function StageComparisonTable({
                     return (
                       <TableCell
                         key={`${snapshot.project.id}-${field}`}
-                        className={`text-sm ${changed ? 'border-l-2 border-amber-500 bg-amber-50 font-medium text-amber-950' : ''}`}
+                        className={`text-sm ${changed ? 'border-l-[3px] border-l-blue-600 bg-blue-50 font-semibold text-blue-900 shadow-sm' : ''}`}
                       >
-                        {formatStageComparisonValue(field, value)}
+                        <span className="flex items-center gap-1.5">
+                          {changed && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />}
+                          {formatStageComparisonValue(field, value)}
+                        </span>
                       </TableCell>
                     );
                   })}
