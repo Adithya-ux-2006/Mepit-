@@ -395,6 +395,13 @@ export function runFormulaEngine(
   const annual_energy_kwh = annual_energy_kwh_col ?? (ext.annual_energy_kwh as number | null | undefined) ?? null;
   const operating_hours = operating_hours_col ?? (ext.operating_hours as number | null | undefined) ?? null;
 
+  // Computed-field overrides: if a user manually overrode a computed field,
+  // the value is stored in extended_fields. Use it as-is instead of recomputing.
+  const override = (field: string): number | null => {
+    const v = ext[field];
+    return typeof v === 'number' ? v : null;
+  };
+
   const safeDiv = (num: number | null, den: number | null): number | null => {
     if (num == null || den == null || den === 0) return null;
     return num / den;
@@ -407,15 +414,17 @@ export function runFormulaEngine(
 
   switch (kpiCode) {
     case 'PLANT_ROOM_PCT':
-      return { value: safeMul(safeDiv(plant_room_area, bua), 100) };
+      return { value: override('plant_room_bua_pct') ?? safeMul(safeDiv(plant_room_area, bua), 100) };
 
     case 'LEASABLE_PLANT_ROOM_PCT':
-      return { value: safeMul(safeDiv(leasable_plant_room_area, bua), 100) };
+      return { value: override('leasable_plant_room_bua_pct') ?? safeMul(safeDiv(leasable_plant_room_area, bua), 100) };
 
     case 'SHAFT_AREA_PCT':
-      return { value: safeMul(safeDiv(shaft_area, bua), 100) };
+      return { value: override('shaft_area_bua_pct') ?? safeMul(safeDiv(shaft_area, bua), 100) };
 
     case 'POPULATION': {
+      const overrideVal = override('population');
+      if (overrideVal != null) return { value: overrideVal };
       const officePop = safeDiv(office_area, occupancy_density_office);
       const fbPop = safeDiv(fb_area, occupancy_density_fb);
       if (officePop == null && fbPop == null) return { value: null };
@@ -423,7 +432,7 @@ export function runFormulaEngine(
     }
 
     case 'COOLING_LOAD_DENSITY':
-      return { value: safeDiv(carpet_area, total_tr) };
+      return { value: override('cooling_load_carpet') ?? safeDiv(carpet_area, total_tr) };
 
     case 'CFM_SQFT':
       return { value: safeDiv(total_airflow_cfm, carpet_area) };
@@ -441,6 +450,8 @@ export function runFormulaEngine(
       return { value: hvac_cost ?? null };
 
     case 'TOTAL_VA_SQFT_CARPET': {
+      const overrideVal = override('total_va_sqft_carpet');
+      if (overrideVal != null) return { value: overrideVal };
       const totalPower = safeMul(
         (tenant_power_kva ?? 0) + (common_area_power_kva ?? 0),
         1000
@@ -449,6 +460,8 @@ export function runFormulaEngine(
     }
 
     case 'TOTAL_VA_SQFT_SALEABLE': {
+      const overrideVal = override('total_va_sqft_saleable');
+      if (overrideVal != null) return { value: overrideVal };
       const totalPower = safeMul(
         (tenant_power_kva ?? 0) + (common_area_power_kva ?? 0),
         1000
@@ -457,6 +470,8 @@ export function runFormulaEngine(
     }
 
     case 'TOTAL_VA_SQFT_BUA': {
+      const overrideVal = override('va_sqft_bua_total');
+      if (overrideVal != null) return { value: overrideVal };
       const totalPower = safeMul(
         (tenant_power_kva ?? 0) + (common_area_power_kva ?? 0),
         1000

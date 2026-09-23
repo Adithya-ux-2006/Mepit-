@@ -330,7 +330,6 @@ function generateAutoFillData(form: FormState): Record<string, unknown> {
   const ffUndergroundTank = Math.round(bua * 0.00002);
   const ffOverheadTank = Math.round(ffUndergroundTank * 0.5);
 
-  const occupancyHvac = bua / (profile.occupancyDensityOffice || 100);
   const occupancyPhe = bua / (profile.occupancyDensityOffice || 100);
 
   return {
